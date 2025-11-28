@@ -29,7 +29,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                 CreditEndDate = new DateTime(2025, 1, 1),
                 DayCountBasis = DayCountBasis.Actual365,
                 RoundingMode = RoundingModeOption.Bankers,
-                RoundingDecimals = 2,
+                RoundingDecimals = 4,
                 BulletRepayment = true
             },
             Rates = new List<InterestRatePeriod>
@@ -52,7 +52,9 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 
         var calculator = new DayToDayScheduleCalculator();
         var expectedSchedule = calculator.Calculate(request.Parameters, request.Rates);
-        var expectedTotalInterest = expectedSchedule.Sum(item => item.InterestAmount);
+        var expectedTotalInterest = expectedSchedule
+            .Select(item => RoundingService.Round(item.InterestAmount, request.Parameters.RoundingMode, 2))
+            .Sum();
 
         Assert.Equal(expectedTotalInterest, payload.TotalInterest);
     }

@@ -24,9 +24,15 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
 
         var principalRemaining = parameters.NetValue;
         var paymentCount = paymentDates.Count;
-        var principalStep = parameters.BulletRepayment
+        var principalStep = parameters.PaymentType == PaymentType.Bullet
             ? 0m
             : RoundingService.Round(parameters.NetValue / paymentCount, parameters.RoundingMode, parameters.RoundingDecimals);
+
+        decimal? fixedTotalPayment = null;
+        if (parameters.PaymentType == PaymentType.EqualInstallments)
+        {
+            fixedTotalPayment = CalculateLevelPayment(parameters, ratePeriods, paymentDates);
+        }
 
         var schedule = new List<ScheduleItem>();
         var previousDate = parameters.CreditStartDate;
@@ -38,26 +44,27 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
 
             decimal principalPayment;
-            if (parameters.BulletRepayment && paymentDate == paymentDates[^1])
-            {
-                principalPayment = principalRemaining;
-            }
-            else if (parameters.BulletRepayment)
+            if (parameters.PaymentType == PaymentType.Bullet && paymentDate != paymentDates[^1])
             {
                 principalPayment = 0m;
             }
-            else if (paymentDate == paymentDates[^1])
+            else if (parameters.PaymentType == PaymentType.Bullet || parameters.PaymentType == PaymentType.DecreasingInstallments)
             {
-                principalPayment = principalRemaining;
+                principalPayment = paymentDate == paymentDates[^1] ? principalRemaining : principalStep;
             }
             else
             {
-                principalPayment = principalStep;
+                var targetTotal = fixedTotalPayment!.Value;
+                principalPayment = targetTotal - interestRounded;
+                if (paymentDate == paymentDates[^1])
+                {
+                    principalPayment = principalRemaining;
+                }
             }
 
             principalPayment = RoundingService.Round(principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
             principalRemaining = RoundingService.Round(principalRemaining - principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
-            var totalPayment = interestRounded + principalPayment;
+            var totalPayment = fixedTotalPayment ?? (interestRounded + principalPayment);
 
             var periodRate = FindRateForDate(ratePeriods, previousDate)?.Rate ?? 0m;
             schedule.Add(new ScheduleItem
@@ -75,6 +82,66 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         }
 
         return schedule;
+    }
+
+    private decimal CalculateLevelPayment(
+        CreditParameters parameters,
+        IReadOnlyCollection<InterestRatePeriod> ratePeriods,
+        IReadOnlyList<DateTime> paymentDates)
+    {
+        var low = 0m;
+        var high = Math.Max(parameters.NetValue * 10m, parameters.NetValue + 1000m);
+        var tolerance = 0.01m;
+
+        for (var i = 0; i < 200; i++)
+        {
+            var mid = (low + high) / 2m;
+            var remaining = SimulateRemainingPrincipal(parameters, ratePeriods, paymentDates, mid);
+
+            if (Math.Abs(remaining) <= tolerance)
+            {
+                return RoundingService.Round(mid, parameters.RoundingMode, parameters.RoundingDecimals);
+            }
+
+            if (remaining > 0)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        return RoundingService.Round((low + high) / 2m, parameters.RoundingMode, parameters.RoundingDecimals);
+    }
+
+    private decimal SimulateRemainingPrincipal(
+        CreditParameters parameters,
+        IReadOnlyCollection<InterestRatePeriod> ratePeriods,
+        IReadOnlyList<DateTime> paymentDates,
+        decimal totalPayment)
+    {
+        var principalRemaining = parameters.NetValue;
+        var previousDate = parameters.CreditStartDate;
+
+        foreach (var paymentDate in paymentDates)
+        {
+            var interest = CalculateInterestDaily(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis);
+            var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
+
+            var principalPayment = totalPayment - interestRounded;
+            if (paymentDate == paymentDates[^1])
+            {
+                principalPayment = principalRemaining;
+            }
+
+            principalPayment = RoundingService.Round(principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
+            principalRemaining = RoundingService.Round(principalRemaining - principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
+            previousDate = paymentDate;
+        }
+
+        return principalRemaining;
     }
 
     private static decimal CalculateInterestDaily(DateTime from, DateTime to, decimal principal, decimal marginRate, IReadOnlyCollection<InterestRatePeriod> ratePeriods, DayCountBasis basis)

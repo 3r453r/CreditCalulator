@@ -35,6 +35,13 @@ public enum PaymentType
     Bullet
 }
 
+public enum InterestRateApplication
+{
+    DailyAccrual,
+    AverageRatePerPeriod,
+    ApplyChangedRateNextPeriod
+}
+
 public class CreditParameters
 {
     public const int MinRoundingDecimals = 4;
@@ -87,4 +94,9 @@ public class CreditParameters
         get => PaymentType == PaymentType.Bullet;
         set => PaymentType = value ? PaymentType.Bullet : PaymentType.DecreasingInstallments;
     }
+
+    /// <summary>
+    /// Defines how changing base rates are applied to interest accrual.
+    /// </summary>
+    public InterestRateApplication InterestRateApplication { get; set; } = InterestRateApplication.DailyAccrual;
 }

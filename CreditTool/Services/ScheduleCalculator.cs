@@ -22,6 +22,11 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             paymentDates.Add(parameters.CreditEndDate);
         }
 
+        if (parameters.InterestRateApplication != InterestRateApplication.DailyAccrual && parameters.PaymentFrequency == PaymentFrequency.Daily)
+        {
+            throw new ArgumentException("Alternatywne sposoby naliczania odsetek są dostępne tylko dla harmonogramów miesięcznych i kwartalnych.");
+        }
+
         var principalRemaining = parameters.NetValue;
         var paymentCount = paymentDates.Count;
         var principalStep = parameters.PaymentType == PaymentType.Bullet
@@ -49,16 +54,34 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
                 Result = $"{daysInPeriod} dni"
             });
 
-            var interest = CalculateInterestDaily(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis);
+            var (interest, effectiveRate) = CalculateInterest(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis, parameters.InterestRateApplication);
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
 
-            var periodRate = FindRateForDate(ratePeriods, previousDate)?.Rate ?? 0m;
+            var baseRate = Math.Max(effectiveRate - parameters.MarginRate, 0m);
             var denominator = parameters.DayCountBasis == DayCountBasis.Actual360 ? 360m : 365m;
+            var interestDescription = parameters.InterestRateApplication switch
+            {
+                InterestRateApplication.AverageRatePerPeriod => "Naliczanie odsetek (\u015brednia stopa w okresie)",
+                InterestRateApplication.ApplyChangedRateNextPeriod => "Naliczanie odsetek (zmiana stopy od kolejnego okresu)",
+                _ => "Naliczanie odsetek"
+            };
+            var interestFormula = parameters.InterestRateApplication switch
+            {
+                InterestRateApplication.AverageRatePerPeriod => "odsetki = saldo * (\u015brednia_stopa + mar\u017ca) / 100 / baza_dni * dni",
+                InterestRateApplication.ApplyChangedRateNextPeriod => "odsetki = saldo * (stopa_na_pocz\u0105tek + mar\u017ca) / 100 / baza_dni * dni",
+                _ => "odsetki = \u03a3(saldo * (stawka_dzienna + mar\u017ca) / 100 / baza_dni)"
+            };
+            var interestSubstitution = parameters.InterestRateApplication switch
+            {
+                InterestRateApplication.AverageRatePerPeriod => $"odsetki = {principalRemaining:F2} * ({baseRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
+                InterestRateApplication.ApplyChangedRateNextPeriod => $"odsetki = {principalRemaining:F2} * ({baseRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
+                _ => $"odsetki = {principalRemaining:F2} * \u015brednia_stawka_dzienna (baza: {denominator}, dni: {daysInPeriod})"
+            };
             calculationLog.Add(new CalculationLogEntry
             {
-                ShortDescription = "Naliczanie odsetek",
-                SymbolicFormula = "odsetki = saldo * (stawka + mar\u017ca) / 100 / baza_dni * dni",
-                SubstitutedFormula = $"odsetki = {principalRemaining:F2} * ({periodRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
+                ShortDescription = interestDescription,
+                SymbolicFormula = interestFormula,
+                SubstitutedFormula = interestSubstitution,
                 Result = $"{interestRounded:F4} PLN"
             });
 
@@ -112,14 +135,17 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
                 {
                     PaymentType.Bullet when paymentDate != paymentDates[^1] => "kapita\u0142 = 0",
                     PaymentType.Bullet => "kapita\u0142 = saldo\u00a0ko\u0144cowe",
-                    PaymentType.DecreasingInstallments => "kapita\u0142 = saldo_pocz\u0105tkowe / liczba_rat",
+                    PaymentType.DecreasingInstallments => paymentDate == paymentDates[^1]
+                        ? "kapita\u0142 = saldo ko\u0144cowe"
+                        : "kapita\u0142 = saldo_pocz\u0105tkowe / liczba_rat",
                     _ => "kapita\u0142 = rata_ca\u0142kowita - odsetki"
                 },
                 SubstitutedFormula = parameters.PaymentType switch
                 {
                     PaymentType.Bullet when paymentDate != paymentDates[^1] => "kapita\u0142 = 0",
                     PaymentType.Bullet => $"kapita\u0142 = {principalRemaining:F2}",
-                    PaymentType.DecreasingInstallments => $"kapita\u0142 = {principalRemaining:F2} / {paymentCount}",
+                    PaymentType.DecreasingInstallments when paymentDate == paymentDates[^1] => $"kapita\u0142 = {principalRemaining:F4}",
+                    PaymentType.DecreasingInstallments => $"kapita\u0142 = {parameters.NetValue:F4} / {paymentCount}",
                     _ => $"kapita\u0142 = {fixedTotalPayment!.Value:F4} - {interestRounded:F4}"
                 },
                 Result = $"{principalPayment:F4} PLN"
@@ -147,7 +173,7 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             {
                 PaymentDate = paymentDate,
                 DaysInPeriod = daysInPeriod,
-                InterestRate = periodRate + parameters.MarginRate,
+                InterestRate = effectiveRate,
                 InterestAmount = interestRounded,
                 PrincipalPayment = principalPayment,
                 TotalPayment = totalPayment,
@@ -217,7 +243,7 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
 
         foreach (var paymentDate in paymentDates)
         {
-            var interest = CalculateInterestDaily(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis);
+            var (interest, _) = CalculateInterest(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis, parameters.InterestRateApplication);
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
 
             var principalPayment = totalPayment - interestRounded;
@@ -234,6 +260,58 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         }
 
         return principalRemaining;
+    }
+
+    private static (decimal Interest, decimal EffectiveRate) CalculateInterest(
+        DateTime from,
+        DateTime to,
+        decimal principal,
+        decimal marginRate,
+        IReadOnlyCollection<InterestRatePeriod> ratePeriods,
+        DayCountBasis basis,
+        InterestRateApplication application)
+    {
+        var daysInPeriod = Math.Max((to - from).Days, 0);
+        var denominator = basis == DayCountBasis.Actual360 ? 360m : 365m;
+
+        switch (application)
+        {
+            case InterestRateApplication.AverageRatePerPeriod:
+            {
+                decimal totalRate = 0m;
+                for (var day = from; day < to; day = day.AddDays(1))
+                {
+                    totalRate += FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
+                }
+
+                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
+                var effectiveRate = averageRate + marginRate;
+                var interest = principal * effectiveRate / 100m / denominator * daysInPeriod;
+                return (interest, effectiveRate);
+            }
+            case InterestRateApplication.ApplyChangedRateNextPeriod:
+            {
+                var baseRate = FindRateForDate(ratePeriods, from)?.Rate ?? 0m;
+                var effectiveRate = baseRate + marginRate;
+                var interest = principal * effectiveRate / 100m / denominator * daysInPeriod;
+                return (interest, effectiveRate);
+            }
+            default:
+            {
+                decimal interest = 0m;
+                decimal totalRate = 0m;
+                for (var day = from; day < to; day = day.AddDays(1))
+                {
+                    var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
+                    totalRate += rate;
+                    var effectiveRate = rate + marginRate;
+                    interest += principal * effectiveRate / 100m / denominator;
+                }
+
+                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
+                return (interest, averageRate + marginRate);
+            }
+        }
     }
 
     private static decimal CalculateInterestDaily(DateTime from, DateTime to, decimal principal, decimal marginRate, IReadOnlyCollection<InterestRatePeriod> ratePeriods, DayCountBasis basis)

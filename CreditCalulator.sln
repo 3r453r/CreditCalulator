@@ -1,0 +1,27 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CreditTool", "CreditTool\CreditTool.csproj", "{4EDF4A55-BDB6-42FA-8DC5-657738791543}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CreditTool.Tests", "CreditTool.Tests\CreditTool.Tests.csproj", "{7A7412F5-5B98-4391-BF78-6A25BD3A9CA4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4EDF4A55-BDB6-42FA-8DC5-657738791543}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4EDF4A55-BDB6-42FA-8DC5-657738791543}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4EDF4A55-BDB6-42FA-8DC5-657738791543}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4EDF4A55-BDB6-42FA-8DC5-657738791543}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A7412F5-5B98-4391-BF78-6A25BD3A9CA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A7412F5-5B98-4391-BF78-6A25BD3A9CA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A7412F5-5B98-4391-BF78-6A25BD3A9CA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A7412F5-5B98-4391-BF78-6A25BD3A9CA4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -10,7 +10,7 @@ function addRateRow(rate) {
         <td><input type="date" class="date-from" value="${rate?.dateFrom ?? ''}" required></td>
         <td><input type="date" class="date-to" value="${rate?.dateTo ?? ''}" required></td>
         <td><input type="number" step="0.01" class="rate-value" value="${rate?.rate ?? 0}" required></td>
-        <td><button type="button" class="secondary remove-rate">Remove</button></td>
+        <td><button type="button" class="secondary remove-rate">Usuñ</button></td>
     `;
     row.querySelector('.remove-rate').addEventListener('click', () => {
         row.remove();
@@ -96,7 +96,7 @@ importForm.addEventListener('submit', async (event) => {
     importStatus.textContent = '';
     const fileInput = document.getElementById('import-file');
     if (!fileInput.files.length) {
-        importStatus.textContent = 'Please choose an Excel file to import.';
+        importStatus.textContent = 'Wybierz plik Excel do importu.';
         importStatus.className = 'status error';
         return;
     }
@@ -112,10 +112,10 @@ importForm.addEventListener('submit', async (event) => {
         const data = await response.json();
         setParametersToForm(data.parameters);
         populateRateTable(data.rates);
-        importStatus.textContent = 'Parameters imported successfully.';
+        importStatus.textContent = 'Parametry zosta³y zaimportowane.';
         importStatus.className = 'status success';
     } catch (error) {
-        importStatus.textContent = `Import failed: ${error.message}`;
+        importStatus.textContent = `Import nieudany: ${error.message}`;
         importStatus.className = 'status error';
     }
 });
@@ -135,16 +135,16 @@ document.getElementById('calculate').addEventListener('click', async () => {
         }
         const schedule = await response.json();
         displaySchedule(schedule);
-        actionStatus.textContent = 'Schedule calculated.';
+        actionStatus.textContent = 'Harmonogram zosta³ obliczony.';
         actionStatus.className = 'status success';
     } catch (error) {
-        actionStatus.textContent = `Calculation failed: ${error.message}`;
+        actionStatus.textContent = `B³¹d obliczeñ: ${error.message}`;
         actionStatus.className = 'status error';
     }
 });
 
 document.getElementById('export').addEventListener('click', async () => {
-    actionStatus.textContent = 'Exporting...';
+    actionStatus.textContent = 'Trwa eksport...';
     actionStatus.className = 'status';
     try {
         const payload = buildPayload();
@@ -163,10 +163,10 @@ document.getElementById('export').addEventListener('click', async () => {
         link.download = 'credit-schedule.xlsx';
         link.click();
         window.URL.revokeObjectURL(url);
-        actionStatus.textContent = 'Excel exported successfully.';
+        actionStatus.textContent = 'Eksport do Excel zakoñczony powodzeniem.';
         actionStatus.className = 'status success';
     } catch (error) {
-        actionStatus.textContent = `Export failed: ${error.message}`;
+        actionStatus.textContent = `Eksport ieudany: ${error.message}`;
         actionStatus.className = 'status error';
     }
 });

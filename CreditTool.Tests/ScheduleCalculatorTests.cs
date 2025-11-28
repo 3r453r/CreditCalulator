@@ -33,7 +33,7 @@ public class ScheduleCalculatorTests
                 DateTo = new DateTime(2024, 12, 31),
                 Rate = 4m
             }
-        });
+        }).Schedule;
 
         Assert.Single(schedule);
         var payment = schedule[0];
@@ -79,7 +79,7 @@ public class ScheduleCalculatorTests
             }
         };
 
-        var schedule = calculator.Calculate(parameters, rates);
+        var schedule = calculator.Calculate(parameters, rates).Schedule;
 
         Assert.Equal(3, schedule.Count);
         Assert.All(schedule.Take(2), payment => Assert.Equal(0m, payment.PrincipalPayment));
@@ -120,7 +120,7 @@ public class ScheduleCalculatorTests
             }
         };
 
-        var schedule = calculator.Calculate(parameters, rates);
+        var schedule = calculator.Calculate(parameters, rates).Schedule;
 
         Assert.Equal(2, schedule.Count);
         var totalRate = rates[0].Rate + parameters.MarginRate;
@@ -165,7 +165,7 @@ public class ScheduleCalculatorTests
             }
         };
 
-        var schedule = calculator.Calculate(parameters, rates);
+        var schedule = calculator.Calculate(parameters, rates).Schedule;
 
         Assert.Equal(12, schedule.Count);
         Assert.All(schedule, item =>

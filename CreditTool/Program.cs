@@ -67,29 +67,29 @@ app.MapPost("/api/import", async (IFormFile file, ExcelService excelService) =>
 
 app.MapPost("/api/calculate", (CalculationRequest request, IScheduleCalculator calculator) =>
 {
-    var schedule = calculator.Calculate(request.Parameters, request.Rates);
-    var roundedSchedule = RoundCashSchedule(schedule, request.Parameters.RoundingMode);
-    return Results.Ok(BuildScheduleResponse(roundedSchedule, request.Parameters));
+    var result = calculator.Calculate(request.Parameters, request.Rates);
+    var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
+    return Results.Ok(BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters));
 });
 
 app.MapPost("/api/export", (CalculationRequest request, string? format, IScheduleCalculator calculator, ExcelService excelService) =>
 {
-    var schedule = calculator.Calculate(request.Parameters, request.Rates);
-    var roundedSchedule = RoundCashSchedule(schedule, request.Parameters.RoundingMode);
-    var response = BuildScheduleResponse(roundedSchedule, request.Parameters);
+    var result = calculator.Calculate(request.Parameters, request.Rates);
+    var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
+    var response = BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters);
 
     try
     {
         if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
         {
-            var jsonPayload = excelService.ExportJson(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+    var jsonPayload = excelService.ExportJson(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
             var jsonFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
             return Results.File(jsonPayload, "application/json", jsonFileName);
         }
 
         if (string.Equals(format, "ods", StringComparison.OrdinalIgnoreCase))
         {
-            var odsPayload = excelService.ExportOds(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+    var odsPayload = excelService.ExportOds(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
             var odsFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.ods";
             return Results.File(odsPayload, "application/vnd.oasis.opendocument.spreadsheet", odsFileName);
         }
@@ -106,13 +106,14 @@ app.MapPost("/api/export", (CalculationRequest request, string? format, ISchedul
 
 app.Run();
 
-static ScheduleResponse BuildScheduleResponse(IReadOnlyList<ScheduleItem> schedule, CreditParameters parameters)
+static ScheduleResponse BuildScheduleResponse(IReadOnlyList<ScheduleItem> schedule, List<CalculationLogEntry> calculationLog, CreditParameters parameters)
 {
     var totalInterest = RoundingService.Round(schedule.Sum(item => item.InterestAmount), parameters.RoundingMode, 2);
 
     return new ScheduleResponse
     {
         Schedule = schedule.ToList(),
+        CalculationLog = calculationLog,
         TotalInterest = totalInterest,
         AnnualPercentageRate = AprCalculator.CalculateAnnualPercentageRate(parameters, schedule)
     };

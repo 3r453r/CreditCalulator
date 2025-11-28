@@ -7,6 +7,8 @@ namespace CreditTool.Models;
 [JsonSerializable(typeof(InterestRatePeriod))]
 [JsonSerializable(typeof(ScheduleResponse))]
 [JsonSerializable(typeof(ScheduleItem))]
+[JsonSerializable(typeof(CalculationLogEntry))]
+[JsonSerializable(typeof(ScheduleCalculationResult))]
 [JsonSerializable(typeof(PaymentFrequency))]
 [JsonSerializable(typeof(PaymentDayOption))]
 [JsonSerializable(typeof(DayCountBasis))]

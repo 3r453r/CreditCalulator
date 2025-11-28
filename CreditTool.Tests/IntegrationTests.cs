@@ -52,7 +52,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotEmpty(payload!.Schedule);
 
         var calculator = new DayToDayScheduleCalculator();
-        var expectedSchedule = calculator.Calculate(request.Parameters, request.Rates);
+        var expectedSchedule = calculator.Calculate(request.Parameters, request.Rates).Schedule;
         var expectedTotalInterest = expectedSchedule
             .Select(item => RoundingService.Round(item.InterestAmount, request.Parameters.RoundingMode, 2))
             .Sum();

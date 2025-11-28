@@ -4,12 +4,12 @@ namespace CreditTool.Services;
 
 public interface IScheduleCalculator
 {
-    IReadOnlyList<ScheduleItem> Calculate(CreditParameters parameters, IReadOnlyCollection<InterestRatePeriod> ratePeriods);
+    ScheduleCalculationResult Calculate(CreditParameters parameters, IReadOnlyCollection<InterestRatePeriod> ratePeriods);
 }
 
 public class DayToDayScheduleCalculator : IScheduleCalculator
 {
-    public IReadOnlyList<ScheduleItem> Calculate(CreditParameters parameters, IReadOnlyCollection<InterestRatePeriod> ratePeriods)
+    public ScheduleCalculationResult Calculate(CreditParameters parameters, IReadOnlyCollection<InterestRatePeriod> ratePeriods)
     {
         if (parameters.CreditEndDate <= parameters.CreditStartDate)
         {
@@ -35,13 +35,40 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         }
 
         var schedule = new List<ScheduleItem>();
+        var calculationLog = new List<CalculationLogEntry>();
         var previousDate = parameters.CreditStartDate;
 
         foreach (var paymentDate in paymentDates)
         {
             var daysInPeriod = (paymentDate - previousDate).Days;
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Wyznaczenie liczby dni okresu",
+                SymbolicFormula = "dni = data_p\u0142atno\u015bci - poprzednia_data",
+                SubstitutedFormula = $"dni = ({paymentDate:yyyy-MM-dd} - {previousDate:yyyy-MM-dd})",
+                Result = $"{daysInPeriod} dni"
+            });
+
             var interest = CalculateInterestDaily(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis);
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
+
+            var periodRate = FindRateForDate(ratePeriods, previousDate)?.Rate ?? 0m;
+            var denominator = parameters.DayCountBasis == DayCountBasis.Actual360 ? 360m : 365m;
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Naliczanie odsetek",
+                SymbolicFormula = "odsetki = saldo * (stawka + mar\u017ca) / 100 / baza_dni * dni",
+                SubstitutedFormula = $"odsetki = {principalRemaining:F2} * ({periodRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
+                Result = $"{interestRounded:F4} PLN"
+            });
+
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Zaokr\u0105glenie odsetek",
+                SymbolicFormula = "odsetki_zaokr = Round(warto\u015b\u0107, tryb, miejsca)",
+                SubstitutedFormula = $"Round({interest:F6}, tryb: {parameters.RoundingMode}, miejsca: {parameters.RoundingDecimals})",
+                Result = $"{interestRounded:F4} PLN"
+            });
 
             decimal principalPayment;
             if (parameters.PaymentType == PaymentType.Bullet && paymentDate != paymentDates[^1])
@@ -71,11 +98,51 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
                 }
             }
 
-            principalPayment = RoundingService.Round(principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
+            var principalPaymentRaw = principalPayment;
+            principalPayment = RoundingService.Round(principalPaymentRaw, parameters.RoundingMode, parameters.RoundingDecimals);
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = parameters.PaymentType switch
+                {
+                    PaymentType.Bullet => "Ustalenie sp\u0142aty kapita\u0142u (bullet)",
+                    PaymentType.DecreasingInstallments => "Ustalenie sp\u0142aty kapita\u0142u (raty malej\u0105ce)",
+                    _ => "Ustalenie sp\u0142aty kapita\u0142u (rata r\u00f3wna)"
+                },
+                SymbolicFormula = parameters.PaymentType switch
+                {
+                    PaymentType.Bullet when paymentDate != paymentDates[^1] => "kapita\u0142 = 0",
+                    PaymentType.Bullet => "kapita\u0142 = saldo\u00a0ko\u0144cowe",
+                    PaymentType.DecreasingInstallments => "kapita\u0142 = saldo_pocz\u0105tkowe / liczba_rat",
+                    _ => "kapita\u0142 = rata_ca\u0142kowita - odsetki"
+                },
+                SubstitutedFormula = parameters.PaymentType switch
+                {
+                    PaymentType.Bullet when paymentDate != paymentDates[^1] => "kapita\u0142 = 0",
+                    PaymentType.Bullet => $"kapita\u0142 = {principalRemaining:F2}",
+                    PaymentType.DecreasingInstallments => $"kapita\u0142 = {principalRemaining:F2} / {paymentCount}",
+                    _ => $"kapita\u0142 = {fixedTotalPayment!.Value:F4} - {interestRounded:F4}"
+                },
+                Result = $"{principalPayment:F4} PLN"
+            });
+
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Zaokr\u0105glenie cz\u0119\u015bci kapita\u0142owej",
+                SymbolicFormula = "kapita\u0142_zaokr = Round(warto\u015b\u0107, tryb, miejsca)",
+                SubstitutedFormula = $"Round({principalPaymentRaw:F6}, tryb: {parameters.RoundingMode}, miejsca: {parameters.RoundingDecimals})",
+                Result = $"{principalPayment:F4} PLN"
+            });
+
             principalRemaining = RoundingService.Round(principalRemaining - principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Aktualizacja salda pozosta\u0142ego",
+                SymbolicFormula = "saldo_nowe = saldo_poprz - kapita\u0142_zaokr",
+                SubstitutedFormula = $"saldo_nowe = {principalRemaining + principalPayment:F4} - {principalPayment:F4}",
+                Result = $"{principalRemaining:F4} PLN"
+            });
             var totalPayment = fixedTotalPayment ?? (interestRounded + principalPayment);
 
-            var periodRate = FindRateForDate(ratePeriods, previousDate)?.Rate ?? 0m;
             schedule.Add(new ScheduleItem
             {
                 PaymentDate = paymentDate,
@@ -90,7 +157,11 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             previousDate = paymentDate;
         }
 
-        return schedule;
+        return new ScheduleCalculationResult
+        {
+            Schedule = schedule,
+            CalculationLog = calculationLog
+        };
     }
 
     private decimal CalculateLevelPayment(

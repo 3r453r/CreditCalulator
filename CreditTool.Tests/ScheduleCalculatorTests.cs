@@ -30,7 +30,7 @@ public class ScheduleCalculatorTests
             new InterestRatePeriod
             {
                 DateFrom = new DateTime(2024, 1, 1),
-                DateTo = new DateTime(2024, 12, 31),
+                DateTo = new DateTime(2024, 2, 1),
                 Rate = 4m
             }
         }).Schedule;
@@ -67,14 +67,14 @@ public class ScheduleCalculatorTests
         {
             new InterestRatePeriod
             {
-                DateFrom = new DateTime(2024, 3, 1),
+                DateFrom = new DateTime(2024, 3, 30),
                 DateTo = new DateTime(2024, 3, 31),
                 Rate = 3m
             },
             new InterestRatePeriod
             {
                 DateFrom = new DateTime(2024, 4, 1),
-                DateTo = new DateTime(2024, 4, 30),
+                DateTo = new DateTime(2024, 4, 2),
                 Rate = 6m
             }
         };
@@ -114,8 +114,8 @@ public class ScheduleCalculatorTests
         {
             new InterestRatePeriod
             {
-                DateFrom = new DateTime(2024, 1, 1),
-                DateTo = new DateTime(2024, 12, 31),
+                DateFrom = new DateTime(2024, 5, 15),
+                DateTo = new DateTime(2024, 6, 15),
                 Rate = 1.3333m
             }
         };
@@ -160,7 +160,7 @@ public class ScheduleCalculatorTests
             new InterestRatePeriod
             {
                 DateFrom = new DateTime(2025, 1, 1),
-                DateTo = new DateTime(2025, 12, 31),
+                DateTo = new DateTime(2026, 1, 1),
                 Rate = 5m
             }
         };
@@ -228,7 +228,7 @@ public class ScheduleCalculatorTests
             new InterestRatePeriod
             {
                 DateFrom = new DateTime(2025, 2, 15),
-                DateTo = new DateTime(2025, 12, 31),
+                DateTo = new DateTime(2025, 4, 1),
                 Rate = 3m
             }
         };
@@ -252,5 +252,100 @@ public class ScheduleCalculatorTests
 
         Assert.Equal(expectedFirstPeriodNext, nextPeriodSchedule[0].InterestAmount);
         Assert.NotEqual(nextPeriodSchedule[0].InterestAmount, dailySchedule[0].InterestAmount);
+    }
+
+    [Fact]
+    public void RequiresContinuousRatePeriodsCoveringCreditDates()
+    {
+        var calculator = CreateCalculator();
+
+        var parameters = new CreditParameters
+        {
+            NetValue = 10_000m,
+            MarginRate = 0m,
+            PaymentFrequency = PaymentFrequency.Daily,
+            PaymentDay = PaymentDayOption.LastOfMonth,
+            CreditStartDate = new DateTime(2025, 1, 1),
+            CreditEndDate = new DateTime(2025, 1, 10),
+            DayCountBasis = DayCountBasis.Actual365,
+            RoundingMode = RoundingModeOption.Bankers,
+            RoundingDecimals = 4
+        };
+
+        var gaps = new[]
+        {
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 1),
+                DateTo = new DateTime(2025, 1, 4),
+                Rate = 5m
+            },
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 6),
+                DateTo = new DateTime(2025, 1, 10),
+                Rate = 5m
+            }
+        };
+
+        var gapException = Assert.Throws<ArgumentException>(() => calculator.Calculate(parameters, gaps));
+        Assert.Contains("przerwa", gapException.Message);
+
+        var overlaps = new[]
+        {
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 1),
+                DateTo = new DateTime(2025, 1, 6),
+                Rate = 5m
+            },
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 5),
+                DateTo = new DateTime(2025, 1, 10),
+                Rate = 5m
+            }
+        };
+
+        var overlapException = Assert.Throws<ArgumentException>(() => calculator.Calculate(parameters, overlaps));
+        Assert.Contains("nakłada", overlapException.Message);
+    }
+
+    [Fact]
+    public void RejectsZeroLengthRatePeriods()
+    {
+        var calculator = CreateCalculator();
+
+        var parameters = new CreditParameters
+        {
+            NetValue = 5000m,
+            MarginRate = 0m,
+            PaymentFrequency = PaymentFrequency.Daily,
+            PaymentDay = PaymentDayOption.LastOfMonth,
+            CreditStartDate = new DateTime(2025, 2, 1),
+            CreditEndDate = new DateTime(2025, 2, 5),
+            DayCountBasis = DayCountBasis.Actual365,
+            RoundingMode = RoundingModeOption.Bankers,
+            RoundingDecimals = 4
+        };
+
+        var invalidPeriods = new[]
+        {
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 2, 1),
+                DateTo = new DateTime(2025, 2, 1),
+                Rate = 3m
+            },
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 2, 2),
+                DateTo = new DateTime(2025, 2, 5),
+                Rate = 3m
+            }
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() => calculator.Calculate(parameters, invalidPeriods));
+        Assert.Contains("wcześniejszą", exception.Message);
     }
 }

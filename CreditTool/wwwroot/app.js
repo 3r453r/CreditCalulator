@@ -37,6 +37,73 @@ function getCreditDates() {
     };
 }
 
+function buildPaymentDates(start, end, frequency, paymentDay) {
+    const dates = [];
+    let current = start;
+
+    const buildMonthDate = (from, monthsToAdd) => {
+        const tentative = new Date(from);
+        tentative.setMonth(tentative.getMonth() + monthsToAdd);
+        const year = tentative.getFullYear();
+        const month = tentative.getMonth();
+
+        switch (paymentDay) {
+            case 'FirstOfMonth':
+                return new Date(year, month, 1);
+            case 'TenthOfMonth':
+                return new Date(year, month, 10);
+            case 'LastOfMonth':
+            default:
+                return new Date(year, month + 1, 0);
+        }
+    };
+
+    while (current < end) {
+        let next;
+        switch (frequency) {
+            case 'Daily':
+                next = addDays(current, 1);
+                break;
+            case 'Quarterly':
+                next = buildMonthDate(current, 3);
+                break;
+            case 'Monthly':
+            default:
+                next = buildMonthDate(current, 1);
+                break;
+        }
+
+        if (next > end) {
+            next = new Date(end);
+        }
+
+        dates.push(next);
+        current = next;
+    }
+
+    return dates;
+}
+
+function getLastPaymentPeriodStart(startDate, endDate) {
+    const frequency = document.getElementById('payment-frequency').value;
+    const paymentDay = document.getElementById('payment-day').value;
+
+    if (!startDate || !endDate || startDate >= endDate) {
+        return null;
+    }
+
+    const paymentDates = buildPaymentDates(startDate, endDate, frequency, paymentDay);
+    if (!paymentDates.length) {
+        return null;
+    }
+
+    if (paymentDates.length === 1) {
+        return startDate;
+    }
+
+    return paymentDates[paymentDates.length - 2];
+}
+
 function enforceInterestApplicationAvailability() {
     const frequency = document.getElementById('payment-frequency').value;
     const isLongPeriod = frequency === 'Monthly' || frequency === 'Quarterly';
@@ -95,6 +162,7 @@ function alignRateBoundariesToCreditDates() {
 function handleAddRateRow() {
     const rows = rateTableBody.querySelectorAll('tr');
     const { startDate, endDate } = getCreditDates();
+    const lastPeriodStart = getLastPaymentPeriodStart(startDate, endDate);
 
     if (!rows.length) {
         addRateRow({
@@ -105,15 +173,11 @@ function handleAddRateRow() {
     }
 
     const lastRow = rows[rows.length - 1];
-    const lastStart = parseDateInput(lastRow.querySelector('.date-from').value) ?? startDate;
-    const lastEnd = parseDateInput(lastRow.querySelector('.date-to').value) ?? endDate ?? lastStart;
-    const periodDays = lastStart && lastEnd ? Math.max(Math.round((lastEnd - lastStart) / DAY_IN_MS), 0) : 0;
 
-    if (endDate && periodDays > 0) {
-        const adjustedPreviousEnd = addDays(endDate, -periodDays);
-        lastRow.querySelector('.date-to').value = formatDateInput(adjustedPreviousEnd);
+    if (endDate && lastPeriodStart && lastPeriodStart < endDate) {
+        lastRow.querySelector('.date-to').value = formatDateInput(lastPeriodStart);
 
-        const newStart = addDays(adjustedPreviousEnd, 1);
+        const newStart = addDays(lastPeriodStart, 1);
         addRateRow({
             dateFrom: formatDateInput(newStart),
             dateTo: formatDateInput(endDate)
@@ -202,8 +266,8 @@ function validateRatePeriods(rates) {
             throw new Error(`Wiersz ${index + 1}: podaj daty początku i końca okresu.`);
         }
 
-        if (dateFrom > dateTo) {
-            throw new Error(`Wiersz ${index + 1}: data "Od" nie może być po dacie "Do".`);
+        if (dateFrom >= dateTo) {
+            throw new Error(`Wiersz ${index + 1}: data "Od" musi być wcześniejsza niż data "Do".`);
         }
 
         return { ...rate, dateFrom, dateTo };

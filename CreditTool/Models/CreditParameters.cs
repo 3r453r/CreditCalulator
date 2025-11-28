@@ -38,7 +38,10 @@ public enum PaymentType
 public enum InterestRateApplication
 {
     DailyAccrual,
-    ApplyChangedRateNextPeriod
+    ApplyChangedRateNextPeriod,
+    CompoundDaily,
+    CompoundMonthly,
+    CompoundQuarterly
 }
 
 public class CreditParameters

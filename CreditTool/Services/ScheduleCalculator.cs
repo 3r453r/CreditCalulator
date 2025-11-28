@@ -43,6 +43,21 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         var calculationLog = new List<CalculationLogEntry>();
         var previousDate = parameters.CreditStartDate;
 
+        var recalculatedRatePeriods = ratePeriods
+            .Where(period => period.DateFrom > parameters.CreditStartDate && period.DateFrom < parameters.CreditEndDate)
+            .OrderBy(period => period.DateFrom);
+
+        foreach (var period in recalculatedRatePeriods)
+        {
+            calculationLog.Add(new CalculationLogEntry
+            {
+                ShortDescription = "Aktualizacja stopy procentowej w trakcie kredytu",
+                SymbolicFormula = "stawka_okresowa = stawka_bazowa + marża",
+                SubstitutedFormula = $"stawka_okresowa = {period.Rate:F4}% + {parameters.MarginRate:F4}% (od {period.DateFrom:yyyy-MM-dd})",
+                Result = $"Nowa stopa od {period.DateFrom:yyyy-MM-dd} do {period.DateTo:yyyy-MM-dd}: {(period.Rate + parameters.MarginRate):F4}%"
+            });
+        }
+
         foreach (var paymentDate in paymentDates)
         {
             var daysInPeriod = (paymentDate - previousDate).Days;
@@ -279,6 +294,78 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
                 var effectiveRate = baseRate + marginRate;
                 var interest = principal * effectiveRate / 100m / denominator * daysInPeriod;
                 return (interest, effectiveRate);
+            }
+            case InterestRateApplication.CompoundDaily:
+            {
+                // Daily compounding: multiply daily factors derived from nominal annual rates.
+                decimal factor = 1m;
+                decimal totalRate = 0m;
+
+                for (var day = from; day < to; day = day.AddDays(1))
+                {
+                    var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
+                    totalRate += rate;
+                    var effectiveRateDaily = rate + marginRate;
+                    factor *= 1m + (effectiveRateDaily / 100m) / denominator;
+                }
+
+                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
+                var effectiveRateAnnualNominal = averageRate + marginRate;
+                var interest = principal * (factor - 1m);
+
+                return (interest, effectiveRateAnnualNominal);
+            }
+            case InterestRateApplication.CompoundMonthly:
+            {
+                // Monthly compounding: convert nominal annual rate with 12 compounding periods to an effective rate for the period.
+                decimal totalRate = 0m;
+
+                for (var day = from; day < to; day = day.AddDays(1))
+                {
+                    var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
+                    totalRate += rate;
+                }
+
+                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
+                var nominalAnnualRate = averageRate + marginRate;
+                var n = 12m;
+                var tYears = daysInPeriod / denominator;
+                var rNom = nominalAnnualRate / 100m;
+
+                var periodFactor = (decimal)Math.Pow(
+                    1.0 + (double)(rNom / n),
+                    (double)(n * tYears)
+                );
+                var periodRate = periodFactor - 1m;
+                var interest = principal * periodRate;
+
+                return (interest, nominalAnnualRate);
+            }
+            case InterestRateApplication.CompoundQuarterly:
+            {
+                // Quarterly compounding: convert nominal annual rate with 4 compounding periods to an effective rate for the period.
+                decimal totalRate = 0m;
+
+                for (var day = from; day < to; day = day.AddDays(1))
+                {
+                    var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
+                    totalRate += rate;
+                }
+
+                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
+                var nominalAnnualRate = averageRate + marginRate;
+                var n = 4m;
+                var tYears = daysInPeriod / denominator;
+                var rNom = nominalAnnualRate / 100m;
+
+                var periodFactor = (decimal)Math.Pow(
+                    1.0 + (double)(rNom / n),
+                    (double)(n * tYears)
+                );
+                var periodRate = periodFactor - 1m;
+                var interest = principal * periodRate;
+
+                return (interest, nominalAnnualRate);
             }
             default:
             {

@@ -535,7 +535,12 @@ public class ScheduleCalculator : IScheduleCalculator
         var rateBreakdown = result.RateBreakdown ?? Array.Empty<RateBreakdownEntry>();
         var hasVariableRates = rateBreakdown.Count > 1;
 
-        if (hasVariableRates)
+        // Only show weighted average rate for strategies where it's actually used in the calculation
+        // For compound interest (daily/monthly/quarterly), the product formula is used, not the average
+        if (hasVariableRates &&
+            parameters.InterestRateApplication != InterestRateApplication.CompoundDaily &&
+            parameters.InterestRateApplication != InterestRateApplication.CompoundMonthly &&
+            parameters.InterestRateApplication != InterestRateApplication.CompoundQuarterly)
         {
             LogRateBreakdownDetails(
                 log,

@@ -1,6 +1,7 @@
 using CreditTool.Models;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using System.Globalization;
 
 namespace CreditTool.Services;
 
@@ -43,16 +44,17 @@ public class WordImportService
 
         return new CreditParameters
         {
-            NetValue = ParseDecimal(map, "NetValue"),
-            MarginRate = ParseDecimal(map, "MarginRate"),
-            PaymentFrequency = ParseEnum(map, "PaymentFrequency", PaymentFrequency.Monthly),
-            PaymentDay = ParseEnum(map, "PaymentDay", PaymentDayOption.LastOfMonth),
-            CreditStartDate = ParseDate(map, "CreditStartDate"),
-            CreditEndDate = ParseDate(map, "CreditEndDate"),
-            DayCountBasis = ParseEnum(map, "DayCountBasis", DayCountBasis.Actual365),
-            RoundingMode = ParseEnum(map, "RoundingMode", RoundingModeOption.Bankers),
-            RoundingDecimals = ParseInt(map, "RoundingDecimals", 4),
+            NetValue = ParseDecimal(map, "NetValue", required: true),
+            MarginRate = ParseDecimal(map, "MarginRate", required: true),
+            PaymentFrequency = ParseEnum(map, "PaymentFrequency", PaymentFrequency.Monthly, required: true),
+            PaymentDay = ParseEnum(map, "PaymentDay", PaymentDayOption.LastOfMonth, required: true),
+            CreditStartDate = ParseDate(map, "CreditStartDate", required: true),
+            CreditEndDate = ParseDate(map, "CreditEndDate", required: true),
+            DayCountBasis = ParseEnum(map, "DayCountBasis", DayCountBasis.Actual365, required: true),
+            RoundingMode = ParseEnum(map, "RoundingMode", RoundingModeOption.Bankers, required: true),
+            RoundingDecimals = ParseInt(map, "RoundingDecimals", 4, required: true),
             ProcessingFeeRate = ParseDecimal(map, "ProcessingFeeRate"),
+            ProcessingFeeAmount = ParseDecimal(map, "ProcessingFeeAmount"),
             PaymentType = ParseEnum(map, "PaymentType", PaymentType.DecreasingInstallments),
             BulletRepayment = ParseBool(map, "BulletRepayment")
         };
@@ -85,28 +87,87 @@ public class WordImportService
         return rows;
     }
 
-    private static decimal ParseDecimal(IDictionary<string, string> parameters, string key)
+    private static decimal ParseDecimal(IDictionary<string, string> parameters, string key, bool required = false)
     {
-        return parameters.TryGetValue(key, out var value) && decimal.TryParse(value, out var result) ? result : 0m;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brakuje wymaganej wartości liczbowej dla parametru {key}.");
+            }
+
+            return 0m;
+        }
+
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("pl-PL"), CultureInfo.CurrentCulture })
+        {
+            if (decimal.TryParse(value, NumberStyles.Any, culture, out var result))
+            {
+                return result;
+            }
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać wartości liczbowej dla parametru {key}.");
     }
 
-    private static int ParseInt(IDictionary<string, string> parameters, string key, int defaultValue)
+    private static int ParseInt(IDictionary<string, string> parameters, string key, int defaultValue, bool required = false)
     {
-        return parameters.TryGetValue(key, out var value) && int.TryParse(value, out var result) ? result : defaultValue;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brakuje wymaganej wartości liczbowej dla parametru {key}.");
+            }
+
+            return defaultValue;
+        }
+
+        if (int.TryParse(value, out var result))
+        {
+            return result;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać wartości liczbowej dla parametru {key}.");
     }
 
-    private static DateTime ParseDate(IDictionary<string, string> parameters, string key)
+    private static DateTime ParseDate(IDictionary<string, string> parameters, string key, bool required)
     {
-        return parameters.TryGetValue(key, out var value) && DateTime.TryParse(value, out var result)
-            ? result
-            : DateTime.Today;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brak wymaganej daty dla parametru {key}.");
+            }
+
+            return default;
+        }
+
+        if (DateTime.TryParse(value, out var result))
+        {
+            return result;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać daty dla parametru {key}.");
     }
 
-    private static TEnum ParseEnum<TEnum>(IDictionary<string, string> parameters, string key, TEnum defaultValue) where TEnum : struct
+    private static TEnum ParseEnum<TEnum>(IDictionary<string, string> parameters, string key, TEnum defaultValue, bool required = false) where TEnum : struct
     {
-        return parameters.TryGetValue(key, out var value) && Enum.TryParse<TEnum>(value, out var parsed)
-            ? parsed
-            : defaultValue;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brakuje wymaganej wartości wyboru dla parametru {key}.");
+            }
+
+            return defaultValue;
+        }
+
+        if (Enum.TryParse<TEnum>(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać wartości dla parametru {key}.");
     }
 
     private static bool ParseBool(IDictionary<string, string> parameters, string key)

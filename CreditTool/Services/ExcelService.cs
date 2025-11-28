@@ -35,6 +35,7 @@ public class ExcelService
         ["Zaokrąglanie"] = "RoundingMode",
         ["Miejsca po przecinku"] = "RoundingDecimals",
         ["Prowizja przygotowawcza"] = "ProcessingFeeRate",
+        ["Prowizja przygotowawcza (kwota)"] = "ProcessingFeeAmount",
         ["Spłata balonowa"] = "BulletRepayment",
         ["Typ spłaty"] = "PaymentType"
     };
@@ -44,6 +45,12 @@ public class ExcelService
         using var workbook = new XLWorkbook(fileStream);
         var parameters = ReadParameters(workbook.Worksheet(1));
         var rates = ReadRates(workbook.Worksheet(2));
+
+        if (rates.Count == 0)
+        {
+            throw new InvalidOperationException("Brak stóp procentowych w arkuszu importu.");
+        }
+
         return (parameters, rates);
     }
 
@@ -83,18 +90,21 @@ public class ExcelService
             currentRow++;
         }
 
+        ValidateRequiredParameters(parameterMap);
+
         return new CreditParameters
         {
-            NetValue = ParseDecimal(parameterMap, "NetValue"),
-            MarginRate = ParseDecimal(parameterMap, "MarginRate"),
-            PaymentFrequency = ParseEnum(parameterMap, "PaymentFrequency", PaymentFrequency.Monthly),
-            PaymentDay = ParseEnum(parameterMap, "PaymentDay", PaymentDayOption.LastOfMonth),
-            CreditStartDate = ParseDate(parameterMap, "CreditStartDate"),
-            CreditEndDate = ParseDate(parameterMap, "CreditEndDate"),
-            DayCountBasis = ParseEnum(parameterMap, "DayCountBasis", DayCountBasis.Actual365),
-            RoundingMode = ParseEnum(parameterMap, "RoundingMode", RoundingModeOption.Bankers),
-            RoundingDecimals = ParseInt(parameterMap, "RoundingDecimals", 4),
+            NetValue = ParseDecimal(parameterMap, "NetValue", required: true),
+            MarginRate = ParseDecimal(parameterMap, "MarginRate", required: true),
+            PaymentFrequency = ParseEnum(parameterMap, "PaymentFrequency", PaymentFrequency.Monthly, required: true),
+            PaymentDay = ParseEnum(parameterMap, "PaymentDay", PaymentDayOption.LastOfMonth, required: true),
+            CreditStartDate = ParseDate(parameterMap, "CreditStartDate", required: true),
+            CreditEndDate = ParseDate(parameterMap, "CreditEndDate", required: true),
+            DayCountBasis = ParseEnum(parameterMap, "DayCountBasis", DayCountBasis.Actual365, required: true),
+            RoundingMode = ParseEnum(parameterMap, "RoundingMode", RoundingModeOption.Bankers, required: true),
+            RoundingDecimals = ParseInt(parameterMap, "RoundingDecimals", 4, required: true),
             ProcessingFeeRate = ParseDecimal(parameterMap, "ProcessingFeeRate"),
+            ProcessingFeeAmount = ParseDecimal(parameterMap, "ProcessingFeeAmount"),
             BulletRepayment = ParseBool(parameterMap, "BulletRepayment"),
             PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments)
         };
@@ -117,6 +127,7 @@ public class ExcelService
             ("RoundingMode", "Zaokrąglanie", parameters.RoundingMode),
             ("RoundingDecimals", "Miejsca po przecinku", parameters.RoundingDecimals),
             ("ProcessingFeeRate", "Prowizja przygotowawcza", parameters.ProcessingFeeRate),
+            ("ProcessingFeeAmount", "Prowizja przygotowawcza (kwota)", parameters.ProcessingFeeAmount),
             ("PaymentType", "Typ spłaty", parameters.PaymentType),
             ("BulletRepayment", "Spłata balonowa", parameters.BulletRepayment)
         };
@@ -182,7 +193,7 @@ public class ExcelService
                 throw new InvalidOperationException($"Nieprawidłowa lub brakująca data w wierszu {currentRow} tabeli stóp procentowych.");
             }
 
-            if (decimal.TryParse(rateCell.GetString(), out var rate))
+            if (TryParseDecimal(rateCell.GetString(), out var rate))
             {
                 rows.Add(new InterestRatePeriod
                 {
@@ -196,6 +207,20 @@ public class ExcelService
         }
 
         return rows;
+    }
+
+    private static bool TryParseDecimal(string value, out decimal result)
+    {
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("pl-PL"), CultureInfo.CurrentCulture })
+        {
+            if (decimal.TryParse(value, NumberStyles.Any, culture, out result))
+            {
+                return true;
+            }
+        }
+
+        result = 0m;
+        return false;
     }
 
     private static bool TryGetDate(IXLCell cell, out DateTime date)
@@ -289,33 +314,145 @@ public class ExcelService
         worksheet.Columns().AdjustToContents();
     }
 
-    private static decimal ParseDecimal(IDictionary<string, string> parameters, string key)
+    private static decimal ParseDecimal(IDictionary<string, string> parameters, string key, bool required = false, decimal defaultValue = 0m)
     {
-        return parameters.TryGetValue(key, out var value) && decimal.TryParse(value, out var result) ? result : 0m;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brak wymaganej wartości liczbowej dla parametru {key}.");
+            }
+
+            return defaultValue;
+        }
+
+        if (TryParseDecimal(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (required)
+        {
+            throw new InvalidOperationException($"Nie można odczytać wartości liczbowej dla parametru {key}.");
+        }
+
+        return defaultValue;
     }
 
-    private static int ParseInt(IDictionary<string, string> parameters, string key, int defaultValue)
+    private static int ParseInt(IDictionary<string, string> parameters, string key, int defaultValue, bool required = false)
     {
-        return parameters.TryGetValue(key, out var value) && int.TryParse(value, out var result) ? result : defaultValue;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brak wymaganej wartości liczbowej dla parametru {key}.");
+            }
+
+            return defaultValue;
+        }
+
+        if (int.TryParse(value, out var result))
+        {
+            return result;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać wartości liczbowej dla parametru {key}.");
     }
 
-    private static DateTime ParseDate(IDictionary<string, string> parameters, string key)
+    private static DateTime ParseDate(IDictionary<string, string> parameters, string key, bool required)
     {
-        return parameters.TryGetValue(key, out var value) && DateTime.TryParse(value, out var result)
-            ? result
-            : DateTime.Today;
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brak wymaganej daty dla parametru {key}.");
+            }
+
+            return default;
+        }
+
+        if (TryParseDateString(value, out var result))
+        {
+            return result;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać daty dla parametru {key}.");
     }
 
-    private static TEnum ParseEnum<TEnum>(IDictionary<string, string> parameters, string key, TEnum defaultValue) where TEnum : struct
+    private static bool TryParseDateString(string value, out DateTime date)
     {
-        return parameters.TryGetValue(key, out var value) && Enum.TryParse<TEnum>(value, out var parsed)
-            ? parsed
-            : defaultValue;
+        foreach (var culture in DayFirstCultures)
+        {
+            if (DateTime.TryParseExact(value, DayFirstDateFormats, culture, DateTimeStyles.None, out date))
+            {
+                return true;
+            }
+        }
+
+        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out date) ||
+            DateTime.TryParse(value, out date))
+        {
+            return true;
+        }
+
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var serialDate))
+        {
+            date = DateTime.FromOADate(serialDate);
+            return true;
+        }
+
+        date = default;
+        return false;
+    }
+
+    private static TEnum ParseEnum<TEnum>(IDictionary<string, string> parameters, string key, TEnum defaultValue, bool required = false) where TEnum : struct
+    {
+        if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            if (required)
+            {
+                throw new InvalidOperationException($"Brak wymaganej wartości wyboru dla parametru {key}.");
+            }
+
+            return defaultValue;
+        }
+
+        if (Enum.TryParse<TEnum>(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException($"Nie można odczytać wartości dla parametru {key}.");
     }
 
     private static bool ParseBool(IDictionary<string, string> parameters, string key)
     {
         return parameters.TryGetValue(key, out var value) && bool.TryParse(value, out var result) && result;
+    }
+
+    private static void ValidateRequiredParameters(IDictionary<string, string> parameters)
+    {
+        var requiredKeys = new[]
+        {
+            "NetValue",
+            "MarginRate",
+            "PaymentFrequency",
+            "PaymentDay",
+            "CreditStartDate",
+            "CreditEndDate",
+            "DayCountBasis",
+            "RoundingMode",
+            "RoundingDecimals"
+        };
+
+        var missing = requiredKeys
+            .Where(key => !parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException($"Brakuje wymaganych parametrów importu: {string.Join(", ", missing)}.");
+        }
     }
 
     internal static string NormalizeParameterKey(string key)

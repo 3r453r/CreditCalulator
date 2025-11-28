@@ -70,6 +70,11 @@ public class CreditParameters
     public decimal ProcessingFeeRate { get; set; }
 
     /// <summary>
+    /// Optional upfront processing fee expressed as a fixed amount.
+    /// </summary>
+    public decimal ProcessingFeeAmount { get; set; }
+
+    /// <summary>
     /// Defines how the principal is amortized over time.
     /// </summary>
     public PaymentType PaymentType { get; set; } = PaymentType.DecreasingInstallments;

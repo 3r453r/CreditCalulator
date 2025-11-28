@@ -34,6 +34,7 @@ function readParametersFromForm() {
         roundingMode: document.getElementById('rounding-mode').value,
         roundingDecimals: parseInt(document.getElementById('rounding-decimals').value || '4', 10),
         processingFeeRate: parseFloat(document.getElementById('processing-fee').value) || 0,
+        processingFeeAmount: parseFloat(document.getElementById('processing-fee-amount').value) || 0,
         paymentType: document.getElementById('payment-type').value
     };
 }
@@ -49,6 +50,7 @@ function setParametersToForm(parameters) {
     document.getElementById('rounding-mode').value = parameters.roundingMode ?? 'Bankers';
     document.getElementById('rounding-decimals').value = parameters.roundingDecimals ?? 4;
     document.getElementById('processing-fee').value = parameters.processingFeeRate ?? 0;
+    document.getElementById('processing-fee-amount').value = parameters.processingFeeAmount ?? 0;
     document.getElementById('payment-type').value = parameters.paymentType ?? 'DecreasingInstallments';
 }
 

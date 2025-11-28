@@ -5,6 +5,21 @@ namespace CreditTool.Services;
 
 public class ExcelService
 {
+    private static readonly Dictionary<string, string> ParameterKeyAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Kwota netto"] = "NetValue",
+        ["Marża"] = "MarginRate",
+        ["Częstotliwość płatności"] = "PaymentFrequency",
+        ["Dzień płatności"] = "PaymentDay",
+        ["Data początkowa"] = "CreditStartDate",
+        ["Data końcowa"] = "CreditEndDate",
+        ["Konwencja dni"] = "DayCountBasis",
+        ["Zaokrąglanie"] = "RoundingMode",
+        ["Miejsca po przecinku"] = "RoundingDecimals",
+        ["Prowizja przygotowawcza"] = "ProcessingFeeRate",
+        ["Spłata balonowa"] = "BulletRepayment"
+    };
+
     public (CreditParameters Parameters, List<InterestRatePeriod> Rates) Import(Stream fileStream)
     {
         using var workbook = new XLWorkbook(fileStream);
@@ -13,17 +28,17 @@ public class ExcelService
         return (parameters, rates);
     }
 
-    public byte[] Export(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule)
+    public byte[] Export(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule, decimal totalInterest)
     {
         using var workbook = new XLWorkbook();
-        var parameterSheet = workbook.AddWorksheet("Parameters");
+        var parameterSheet = workbook.AddWorksheet("Parametry");
         WriteParameters(parameterSheet, parameters);
 
-        var rateSheet = workbook.AddWorksheet("Rates");
+        var rateSheet = workbook.AddWorksheet("Stopy procentowe");
         WriteRates(rateSheet, rates);
 
-        var scheduleSheet = workbook.AddWorksheet("Schedule");
-        WriteSchedule(scheduleSheet, schedule);
+        var scheduleSheet = workbook.AddWorksheet("Harmonogram");
+        WriteSchedule(scheduleSheet, schedule, totalInterest);
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
@@ -41,7 +56,8 @@ public class ExcelService
             var value = worksheet.Cell(currentRow, 2).GetString();
             if (!string.IsNullOrWhiteSpace(key))
             {
-                parameterMap[key.Trim()] = value;
+                var normalizedKey = NormalizeParameterKey(key);
+                parameterMap[normalizedKey] = value;
             }
 
             currentRow++;
@@ -65,30 +81,61 @@ public class ExcelService
 
     private static void WriteParameters(IXLWorksheet sheet, CreditParameters parameters)
     {
-        sheet.Cell(1, 1).Value = "Parameter";
-        sheet.Cell(1, 2).Value = "Value";
+        sheet.Cell(1, 1).Value = "Parametr";
+        sheet.Cell(1, 2).Value = "Wartość";
 
-        var values = new (string, object?)[]
+        var values = new (string Key, string Label, object? Value)[]
         {
-            ("NetValue", parameters.NetValue),
-            ("MarginRate", parameters.MarginRate),
-            ("PaymentFrequency", parameters.PaymentFrequency),
-            ("PaymentDay", parameters.PaymentDay),
-            ("CreditStartDate", parameters.CreditStartDate),
-            ("CreditEndDate", parameters.CreditEndDate),
-            ("DayCountBasis", parameters.DayCountBasis),
-            ("RoundingMode", parameters.RoundingMode),
-            ("RoundingDecimals", parameters.RoundingDecimals),
-            ("ProcessingFeeRate", parameters.ProcessingFeeRate),
-            ("BulletRepayment", parameters.BulletRepayment)
+            ("NetValue", "Kwota netto", parameters.NetValue),
+            ("MarginRate", "Marża", parameters.MarginRate),
+            ("PaymentFrequency", "Częstotliwość płatności", parameters.PaymentFrequency),
+            ("PaymentDay", "Dzień płatności", parameters.PaymentDay),
+            ("CreditStartDate", "Data początkowa", parameters.CreditStartDate),
+            ("CreditEndDate", "Data końcowa", parameters.CreditEndDate),
+            ("DayCountBasis", "Konwencja dni", parameters.DayCountBasis),
+            ("RoundingMode", "Zaokrąglanie", parameters.RoundingMode),
+            ("RoundingDecimals", "Miejsca po przecinku", parameters.RoundingDecimals),
+            ("ProcessingFeeRate", "Prowizja przygotowawcza", parameters.ProcessingFeeRate),
+            ("BulletRepayment", "Spłata balonowa", parameters.BulletRepayment)
+        };
+
+        var choiceOptions = new Dictionary<string, string[]>
+        {
+            ["PaymentFrequency"] = Enum.GetNames<PaymentFrequency>(),
+            ["PaymentDay"] = Enum.GetNames<PaymentDayOption>(),
+            ["DayCountBasis"] = Enum.GetNames<DayCountBasis>(),
+            ["RoundingMode"] = Enum.GetNames<RoundingModeOption>(),
+            ["BulletRepayment"] = new[] { bool.TrueString, bool.FalseString }
         };
 
         var row = 2;
-        foreach (var (key, value) in values)
+        foreach (var (key, label, value) in values)
         {
-            sheet.Cell(row, 1).Value = key;
-            sheet.Cell(row, 2).SetValue(value?.ToString() ?? string.Empty);
+            sheet.Cell(row, 1).Value = label;
+            var valueCell = sheet.Cell(row, 2);
+            valueCell.SetValue(value?.ToString() ?? string.Empty);
+
+            if (choiceOptions.TryGetValue(key, out var options))
+            {
+                var validation = valueCell.CreateDataValidation();
+                validation.List(string.Join(',', options));
+                validation.InCellDropdown = true;
+            }
+
             row++;
+        }
+
+        var legendStartRow = row + 1;
+        sheet.Cell(legendStartRow, 1).Value = "Legenda pól wyboru";
+        sheet.Cell(legendStartRow, 2).Value = "Dostępne wartości";
+
+        var legendRow = legendStartRow + 1;
+        foreach (var (key, options) in choiceOptions)
+        {
+            var label = values.First(v => v.Key == key).Label;
+            sheet.Cell(legendRow, 1).Value = label;
+            sheet.Cell(legendRow, 2).Value = string.Join(", ", options);
+            legendRow++;
         }
 
         sheet.Columns().AdjustToContents();
@@ -116,9 +163,9 @@ public class ExcelService
 
     private static void WriteRates(IXLWorksheet worksheet, IEnumerable<InterestRatePeriod> rates)
     {
-        worksheet.Cell(1, 1).Value = "DateFrom";
-        worksheet.Cell(1, 2).Value = "DateTo";
-        worksheet.Cell(1, 3).Value = "Rate";
+        worksheet.Cell(1, 1).Value = "Od";
+        worksheet.Cell(1, 2).Value = "Do";
+        worksheet.Cell(1, 3).Value = "Stopa (%)";
 
         var row = 2;
         foreach (var rate in rates)
@@ -132,15 +179,15 @@ public class ExcelService
         worksheet.Columns().AdjustToContents();
     }
 
-    private static void WriteSchedule(IXLWorksheet worksheet, IEnumerable<ScheduleItem> schedule)
+    private static void WriteSchedule(IXLWorksheet worksheet, IEnumerable<ScheduleItem> schedule, decimal totalInterest)
     {
-        worksheet.Cell(1, 1).Value = "PaymentDate";
-        worksheet.Cell(1, 2).Value = "DaysInPeriod";
-        worksheet.Cell(1, 3).Value = "InterestRate";
-        worksheet.Cell(1, 4).Value = "InterestAmount";
-        worksheet.Cell(1, 5).Value = "PrincipalPayment";
-        worksheet.Cell(1, 6).Value = "TotalPayment";
-        worksheet.Cell(1, 7).Value = "RemainingPrincipal";
+        worksheet.Cell(1, 1).Value = "Data płatności";
+        worksheet.Cell(1, 2).Value = "Dni w okresie";
+        worksheet.Cell(1, 3).Value = "Stopa %";
+        worksheet.Cell(1, 4).Value = "Odsetki";
+        worksheet.Cell(1, 5).Value = "Spłata kapitału";
+        worksheet.Cell(1, 6).Value = "Łączna płatność";
+        worksheet.Cell(1, 7).Value = "Pozostały kapitał";
 
         var row = 2;
         foreach (var item in schedule)
@@ -154,6 +201,12 @@ public class ExcelService
             worksheet.Cell(row, 7).SetValue(item.RemainingPrincipal);
             row++;
         }
+
+        var totalLabelCell = worksheet.Cell(row + 1, 1);
+        totalLabelCell.Value = "Łączne odsetki";
+        totalLabelCell.Style.Font.Bold = true;
+        worksheet.Cell(row + 1, 2).SetValue(totalInterest);
+        worksheet.Cell(row + 1, 2).Style.Font.Bold = true;
 
         worksheet.Columns().AdjustToContents();
     }
@@ -185,5 +238,13 @@ public class ExcelService
     private static bool ParseBool(IDictionary<string, string> parameters, string key)
     {
         return parameters.TryGetValue(key, out var value) && bool.TryParse(value, out var result) && result;
+    }
+
+    private static string NormalizeParameterKey(string key)
+    {
+        var trimmed = key.Trim();
+        return ParameterKeyAliases.TryGetValue(trimmed, out var canonical)
+            ? canonical
+            : trimmed;
     }
 }

@@ -3,6 +3,7 @@ const scheduleTableBody = document.querySelector('#schedule-table tbody');
 const importForm = document.getElementById('import-form');
 const importStatus = document.getElementById('import-status');
 const actionStatus = document.getElementById('action-status');
+const totalInterestElement = document.getElementById('total-interest');
 
 function addRateRow(rate) {
     const row = document.createElement('tr');
@@ -67,7 +68,11 @@ function populateRateTable(rates) {
     }
 }
 
-function displaySchedule(schedule) {
+function updateTotalInterest(totalInterest) {
+    totalInterestElement.textContent = (totalInterest ?? 0).toFixed(2);
+}
+
+function displaySchedule(schedule, totalInterest) {
     scheduleTableBody.innerHTML = '';
     (schedule ?? []).forEach(item => {
         const row = document.createElement('tr');
@@ -82,6 +87,9 @@ function displaySchedule(schedule) {
         `;
         scheduleTableBody.appendChild(row);
     });
+
+    const calculatedTotal = totalInterest ?? (schedule ?? []).reduce((sum, item) => sum + (item.interestAmount ?? 0), 0);
+    updateTotalInterest(calculatedTotal);
 }
 
 function buildPayload() {
@@ -133,13 +141,14 @@ document.getElementById('calculate').addEventListener('click', async () => {
         if (!response.ok) {
             throw new Error(await response.text());
         }
-        const schedule = await response.json();
-        displaySchedule(schedule);
+        const result = await response.json();
+        displaySchedule(result.schedule, result.totalInterest);
         actionStatus.textContent = 'Harmonogram został obliczony.';
         actionStatus.className = 'status success';
     } catch (error) {
         actionStatus.textContent = `Błąd obliczeń: ${error.message}`;
         actionStatus.className = 'status error';
+        updateTotalInterest(0);
     }
 });
 
@@ -148,7 +157,8 @@ document.getElementById('export').addEventListener('click', async () => {
     actionStatus.className = 'status';
     try {
         const payload = buildPayload();
-        const response = await fetch('/api/export', {
+        const format = document.getElementById('export-format').value;
+        const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -160,10 +170,10 @@ document.getElementById('export').addEventListener('click', async () => {
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'credit-schedule.xlsx';
+        link.download = format === 'word' ? 'harmonogram.docx' : 'harmonogram.xlsx';
         link.click();
         window.URL.revokeObjectURL(url);
-        actionStatus.textContent = 'Eksport do Excel zakończony powodzeniem.';
+        actionStatus.textContent = 'Eksport zakończony powodzeniem.';
         actionStatus.className = 'status success';
     } catch (error) {
         actionStatus.textContent = `Eksport nieudany: ${error.message}`;

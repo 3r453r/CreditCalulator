@@ -1,12 +1,14 @@
 using System.Linq;
 using CreditTool.Models;
 using CreditTool.Services;
+using CreditTool.Services.ScheduleCalculation;
+using CreditTool.Services.ScheduleCalculation.Strategies.PaymentDate;
 
 namespace CreditTool.Tests;
 
 public class ScheduleCalculatorTests
 {
-    private static DayToDayScheduleCalculator CreateCalculator() => new();
+    private static IScheduleCalculator CreateCalculator() => new ScheduleCalculator(new StandardPaymentDateGenerator());
 
     [Fact]
     public void CalculatesMonthlyInterestWithBankingRounding()

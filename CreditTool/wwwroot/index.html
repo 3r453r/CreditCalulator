@@ -97,13 +97,20 @@
 
         <section class="card">
             <h2>Tabela stóp procentowych</h2>
-            <label>
+            <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                 <input type="checkbox" id="auto-continuity" />
-                Automatyczna ciągłość dat
+                <span>Automatyczna ciągłość dat</span>
             </label>
             <table id="rate-table">
                 <thead>
-                    <tr><th>🔒</th><th>Od</th><th>🔒</th><th>Do</th><th>Stopa (%)</th><th></th></tr>
+                    <tr>
+                        <th class="lock-column" style="display: none;">🔒</th>
+                        <th>Od</th>
+                        <th class="lock-column" style="display: none;">🔒</th>
+                        <th>Do</th>
+                        <th>Stopa (%)</th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody></tbody>
             </table>

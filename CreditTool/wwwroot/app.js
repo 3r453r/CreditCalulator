@@ -135,16 +135,60 @@ function enforceInterestApplicationAvailability() {
 
 // Lock/unlock functionality
 function toggleLock(row, field, button) {
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const rowIndex = rows.indexOf(row);
     const dataField = field === 'start' ? 'startLocked' : 'endLocked';
     const isLocked = row.dataset[dataField] === 'true';
-    row.dataset[dataField] = !isLocked ? 'true' : 'false';
+    const newLockState = !isLocked ? 'true' : 'false';
+
+    // Lock/unlock this field
+    row.dataset[dataField] = newLockState;
     button.textContent = !isLocked ? '🔒' : '🔓';
+
+    // Also lock/unlock the adjacent boundary
+    if (field === 'start' && rowIndex > 0) {
+        // Lock previous row's end
+        const prevRow = rows[rowIndex - 1];
+        prevRow.dataset.endLocked = newLockState;
+        const prevEndButton = prevRow.querySelector('.lock-end');
+        if (prevEndButton) {
+            prevEndButton.textContent = !isLocked ? '🔒' : '🔓';
+        }
+    } else if (field === 'end' && rowIndex < rows.length - 1) {
+        // Lock next row's start
+        const nextRow = rows[rowIndex + 1];
+        nextRow.dataset.startLocked = newLockState;
+        const nextStartButton = nextRow.querySelector('.lock-start');
+        if (nextStartButton) {
+            nextStartButton.textContent = !isLocked ? '🔒' : '🔓';
+        }
+    }
 }
 
 function isDateLocked(row, field) {
     if (!row) return false;
     const dataField = field === 'start' ? 'startLocked' : 'endLocked';
     return row.dataset[dataField] === 'true';
+}
+
+function isBoundaryLocked(row, field) {
+    // Check if a boundary is locked (either this row's field or the adjacent row's corresponding field)
+    if (!row) return false;
+
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const rowIndex = rows.indexOf(row);
+
+    if (field === 'start') {
+        // Check if this row's start is locked OR previous row's end is locked
+        if (isDateLocked(row, 'start')) return true;
+        if (rowIndex > 0 && isDateLocked(rows[rowIndex - 1], 'end')) return true;
+    } else if (field === 'end') {
+        // Check if this row's end is locked OR next row's start is locked
+        if (isDateLocked(row, 'end')) return true;
+        if (rowIndex < rows.length - 1 && isDateLocked(rows[rowIndex + 1], 'start')) return true;
+    }
+
+    return false;
 }
 
 // Helper to calculate days between dates
@@ -189,7 +233,7 @@ function cascadeForward(startRow) {
 
     // Find the next locked end boundary
     let endIndex = startIndex + 1;
-    while (endIndex < rows.length && !isDateLocked(rows[endIndex], 'end')) {
+    while (endIndex < rows.length && !isBoundaryLocked(rows[endIndex], 'end')) {
         endIndex++;
     }
 
@@ -222,7 +266,7 @@ function cascadeBackward(startRow) {
 
     // Find the previous locked start boundary
     let beginIndex = startIndex - 1;
-    while (beginIndex >= 0 && !isDateLocked(rows[beginIndex], 'start')) {
+    while (beginIndex >= 0 && !isBoundaryLocked(rows[beginIndex], 'start')) {
         beginIndex--;
     }
 
@@ -265,10 +309,10 @@ function handleStartDateChange(row) {
         return;
     }
 
-    // If there's a previous row and its end is not locked, adjust it
+    // If there's a previous row and the boundary is not locked, adjust it
     if (rowIndex > 0) {
         const prevRow = rows[rowIndex - 1];
-        if (!isDateLocked(prevRow, 'end')) {
+        if (!isBoundaryLocked(prevRow, 'end')) {
             const newPrevEnd = addDays(newStartDate, -1);
             prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
             cascadeBackward(prevRow);
@@ -295,10 +339,10 @@ function handleEndDateChange(row) {
         return;
     }
 
-    // If there's a next row and its start is not locked, adjust it
+    // If there's a next row and the boundary is not locked, adjust it
     if (rowIndex < rows.length - 1) {
         const nextRow = rows[rowIndex + 1];
-        if (!isDateLocked(nextRow, 'start')) {
+        if (!isBoundaryLocked(row, 'end')) {
             const newNextStart = addDays(newEndDate, 1);
             nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
             cascadeForward(row);
@@ -321,10 +365,13 @@ function addRateRow(rate, prepend = false) {
     row.dataset.startLocked = 'false';
     row.dataset.endLocked = 'false';
 
+    const isAutoContinuity = document.getElementById('auto-continuity').checked;
+    const lockCellDisplay = isAutoContinuity ? '' : 'none';
+
     row.innerHTML = `
-        <td><button type="button" class="lock-btn lock-start" title="Zablokuj datę początkową">🔓</button></td>
+        <td class="lock-cell" style="display: ${lockCellDisplay};"><button type="button" class="lock-btn lock-start" title="Zablokuj datę początkową">🔓</button></td>
         <td><input type="date" class="date-from" value="${dateFromValue}" required></td>
-        <td><button type="button" class="lock-btn lock-end" title="Zablokuj datę końcową">🔓</button></td>
+        <td class="lock-cell" style="display: ${lockCellDisplay};"><button type="button" class="lock-btn lock-end" title="Zablokuj datę końcową">🔓</button></td>
         <td><input type="date" class="date-to" value="${dateToValue}" required></td>
         <td><input type="number" step="0.01" class="rate-value" value="${rateValue}" required></td>
         <td><button type="button" class="secondary remove-rate">Usuń</button></td>
@@ -418,7 +465,7 @@ function handleAddRateRow() {
 
         // Find the end of the first unlocked segment
         let segmentEndIndex = 0;
-        while (segmentEndIndex < rows.length && !isDateLocked(rows[segmentEndIndex], 'end')) {
+        while (segmentEndIndex < rows.length && !isBoundaryLocked(rows[segmentEndIndex], 'end')) {
             segmentEndIndex++;
         }
 
@@ -446,7 +493,7 @@ function handleAddRateRow() {
 
     // Find the first segment of unlocked rows after the new row
     let segmentEndIndex = 1;
-    while (segmentEndIndex < updatedRows.length && !isDateLocked(updatedRows[segmentEndIndex], 'end')) {
+    while (segmentEndIndex < updatedRows.length && !isBoundaryLocked(updatedRows[segmentEndIndex], 'end')) {
         segmentEndIndex++;
     }
 
@@ -464,7 +511,24 @@ function handleAddRateRow() {
 
 document.getElementById('add-rate').addEventListener('click', handleAddRateRow);
 document.getElementById('payment-frequency').addEventListener('change', enforceInterestApplicationAvailability);
+document.getElementById('auto-continuity').addEventListener('change', toggleLockColumnsVisibility);
 enforceInterestApplicationAvailability();
+toggleLockColumnsVisibility();
+
+function toggleLockColumnsVisibility() {
+    const isChecked = document.getElementById('auto-continuity').checked;
+    const display = isChecked ? '' : 'none';
+
+    // Toggle header columns
+    document.querySelectorAll('#rate-table th.lock-column').forEach(th => {
+        th.style.display = display;
+    });
+
+    // Toggle lock cells in all rows
+    document.querySelectorAll('#rate-table td.lock-cell').forEach(td => {
+        td.style.display = display;
+    });
+}
 
 function readParametersFromForm() {
     return {

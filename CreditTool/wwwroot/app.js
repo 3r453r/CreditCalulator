@@ -10,7 +10,7 @@ function addRateRow(rate) {
         <td><input type="date" class="date-from" value="${rate?.dateFrom ?? ''}" required></td>
         <td><input type="date" class="date-to" value="${rate?.dateTo ?? ''}" required></td>
         <td><input type="number" step="0.01" class="rate-value" value="${rate?.rate ?? 0}" required></td>
-        <td><button type="button" class="secondary remove-rate">Usuñ</button></td>
+        <td><button type="button" class="secondary remove-rate">UsuÅ„</button></td>
     `;
     row.querySelector('.remove-rate').addEventListener('click', () => {
         row.remove();
@@ -112,7 +112,7 @@ importForm.addEventListener('submit', async (event) => {
         const data = await response.json();
         setParametersToForm(data.parameters);
         populateRateTable(data.rates);
-        importStatus.textContent = 'Parametry zosta³y zaimportowane.';
+        importStatus.textContent = 'Parametry zostaÅ‚y zaimportowane.';
         importStatus.className = 'status success';
     } catch (error) {
         importStatus.textContent = `Import nieudany: ${error.message}`;
@@ -121,7 +121,7 @@ importForm.addEventListener('submit', async (event) => {
 });
 
 document.getElementById('calculate').addEventListener('click', async () => {
-    actionStatus.textContent = 'Calculating...';
+    actionStatus.textContent = 'Trwa obliczanie...';
     actionStatus.className = 'status';
     try {
         const payload = buildPayload();
@@ -135,10 +135,10 @@ document.getElementById('calculate').addEventListener('click', async () => {
         }
         const schedule = await response.json();
         displaySchedule(schedule);
-        actionStatus.textContent = 'Harmonogram zosta³ obliczony.';
+        actionStatus.textContent = 'Harmonogram zostaÅ‚ obliczony.';
         actionStatus.className = 'status success';
     } catch (error) {
-        actionStatus.textContent = `B³¹d obliczeñ: ${error.message}`;
+        actionStatus.textContent = `BÅ‚Ä…d obliczeÅ„: ${error.message}`;
         actionStatus.className = 'status error';
     }
 });
@@ -163,10 +163,10 @@ document.getElementById('export').addEventListener('click', async () => {
         link.download = 'credit-schedule.xlsx';
         link.click();
         window.URL.revokeObjectURL(url);
-        actionStatus.textContent = 'Eksport do Excel zakoñczony powodzeniem.';
+        actionStatus.textContent = 'Eksport do Excel zakoÅ„czony powodzeniem.';
         actionStatus.className = 'status success';
     } catch (error) {
-        actionStatus.textContent = `Eksport ieudany: ${error.message}`;
+        actionStatus.textContent = `Eksport nieudany: ${error.message}`;
         actionStatus.className = 'status error';
     }
 });

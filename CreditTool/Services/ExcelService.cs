@@ -339,7 +339,7 @@ public class ExcelService
 
     private static bool TryParseDecimal(string value, out decimal result)
     {
-        foreach (var culture in new[] { CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("pl-PL"), CultureInfo.CurrentCulture })
+        foreach (var culture in new[] { CultureInfo.GetCultureInfo("pl-PL"), CultureInfo.CurrentCulture, CultureInfo.InvariantCulture })
         {
             if (decimal.TryParse(value, NumberStyles.Any, culture, out result))
             {

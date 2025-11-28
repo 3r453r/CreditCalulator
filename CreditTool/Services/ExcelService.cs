@@ -1,10 +1,28 @@
 using ClosedXML.Excel;
 using CreditTool.Models;
+using System.Globalization;
 
 namespace CreditTool.Services;
 
 public class ExcelService
 {
+    private static readonly string[] DayFirstDateFormats =
+    {
+        "dd/MM/yyyy",
+        "d/M/yyyy",
+        "dd.MM.yyyy",
+        "d.M.yyyy",
+        "dd-MM-yyyy",
+        "d-M-yyyy"
+    };
+
+    private static readonly CultureInfo[] DayFirstCultures =
+    {
+        CultureInfo.InvariantCulture,
+        CultureInfo.GetCultureInfo("pl-PL"),
+        CultureInfo.GetCultureInfo("en-GB")
+    };
+
     internal static readonly Dictionary<string, string> ParameterKeyAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Kwota netto"] = "NetValue",
@@ -157,9 +175,14 @@ public class ExcelService
             var toCell = worksheet.Cell(currentRow, 2);
             var rateCell = worksheet.Cell(currentRow, 3);
 
-            if (TryGetDate(fromCell, out var from) &&
-                TryGetDate(toCell, out var to) &&
-                decimal.TryParse(rateCell.GetString(), out var rate))
+            if (fromCell.IsEmpty() || toCell.IsEmpty() ||
+                !TryGetDate(fromCell, out var from) ||
+                !TryGetDate(toCell, out var to))
+            {
+                throw new InvalidOperationException($"Nieprawidłowa lub brakująca data w wierszu {currentRow} tabeli stóp procentowych.");
+            }
+
+            if (decimal.TryParse(rateCell.GetString(), out var rate))
             {
                 rows.Add(new InterestRatePeriod
                 {
@@ -184,12 +207,24 @@ public class ExcelService
         }
 
         var text = cell.GetString();
-        if (DateTime.TryParse(text, out date))
+        if (!string.IsNullOrWhiteSpace(text))
         {
-            return true;
+            foreach (var culture in DayFirstCultures)
+            {
+                if (DateTime.TryParseExact(text, DayFirstDateFormats, culture, DateTimeStyles.None, out date))
+                {
+                    return true;
+                }
+            }
+
+            if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out date) ||
+                DateTime.TryParse(text, out date))
+            {
+                return true;
+            }
         }
 
-        if (double.TryParse(text, out var serialDate))
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var serialDate))
         {
             date = DateTime.FromOADate(serialDate);
             return true;

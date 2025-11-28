@@ -108,3 +108,30 @@ th {
 .status.success {
     color: #16a34a;
 }
+
+.warning-row {
+    background-color: #fff3cd;
+}
+
+.warnings {
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.warnings h3 {
+    margin-top: 0;
+    color: #856404;
+}
+
+.warnings ul {
+    margin-bottom: 0;
+}
+
+#payment-info {
+    background-color: #d1ecf1;
+    border-left: 4px solid #0c5460;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+}

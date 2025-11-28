@@ -6,6 +6,12 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<IScheduleCalculator, DayToDayScheduleCalculator>();
+builder.Services.AddSingleton(_ => new CalculatorConfiguration
+{
+    LevelPaymentTolerance = 0.0001m,
+    EnableValidation = true,
+    ThrowOnNegativeAmortization = false
+});
 builder.Services.AddSingleton<ExcelService>();
 builder.Services.AddSingleton<LogExportService>();
 builder.Services.AddEndpointsApiExplorer();
@@ -66,12 +72,23 @@ app.MapPost("/api/import", async (IFormFile file, ExcelService excelService) =>
     }
 });
 
-app.MapPost("/api/calculate", (CalculationRequest request, IScheduleCalculator calculator) =>
+app.MapPost("/api/calculate", (
+    CalculationRequest request,
+    IScheduleCalculator calculator,
+    CalculatorConfiguration config) =>
 {
-    var result = calculator.Calculate(request.Parameters, request.Rates);
+    var result = calculator.Calculate(request.Parameters, request.Rates, config);
     var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
-    return Results.Ok(BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters));
+
+    var response = BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters);
+    response.Warnings = result.Warnings;
+    response.TargetLevelPayment = result.TargetLevelPayment;
+    response.ActualFinalPayment = result.ActualFinalPayment;
+
+    return Results.Ok(response);
 });
+
+
 
 app.MapPost("/api/export", (CalculationRequest request, string? format, IScheduleCalculator calculator, ExcelService excelService) =>
 {
@@ -109,7 +126,7 @@ app.MapPost("/api/export-log", (CalculationRequest request, IScheduleCalculator 
 {
     try
     {
-        var result = calculator.Calculate(request.Parameters, request.Rates);
+        var result = calculator.Calculate(request.Parameters, request.Rates, includeLog: true);
         var logPayload = logExportService.Export(result.CalculationLog);
         var logFileName = $"Harmonogram_Log_{DateTime.UtcNow:yyyyMMddHHmmss}.md";
         return Results.File(logPayload, "text/markdown; charset=utf-8", logFileName);

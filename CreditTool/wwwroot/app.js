@@ -306,17 +306,29 @@ function updateApr(apr) {
     aprElement.textContent = `${(apr ?? 0).toFixed(4)}%`;
 }
 
-function displaySchedule(schedule, totalInterest, annualPercentageRate) {
+// Add after the schedule table
+function displaySchedule(schedule, totalInterest, annualPercentageRate, warnings, targetPayment, actualFinalPayment) {
     scheduleTableBody.innerHTML = '';
-    (schedule ?? []).forEach(item => {
+    (schedule ?? []).forEach((item, index) => {
         const row = document.createElement('tr');
+
+        // Add warning class if needed
+        if (item.warnings && item.warnings !== 0) {
+            row.classList.add('warning-row');
+        }
+
+        let paymentDisplay = item.totalPayment.toFixed(2);
+        if (item.isFinalPaymentAdjusted) {
+            paymentDisplay += ' *';
+        }
+
         row.innerHTML = `
             <td>${item.paymentDate?.substring(0, 10)}</td>
             <td>${item.daysInPeriod}</td>
-            <td>${item.interestRate.toFixed(4)}%</td>
+            <td>${item.interestRate.toFixed(4)}%${item.nominalRate ? ` (nom: ${item.nominalRate.toFixed(4)}%)` : ''}</td>
             <td>${item.interestAmount.toFixed(2)}</td>
             <td>${item.principalPayment.toFixed(2)}</td>
-            <td>${item.totalPayment.toFixed(2)}</td>
+            <td>${paymentDisplay}</td>
             <td>${item.remainingPrincipal.toFixed(2)}</td>
         `;
         scheduleTableBody.appendChild(row);
@@ -325,6 +337,30 @@ function displaySchedule(schedule, totalInterest, annualPercentageRate) {
     const calculatedTotal = totalInterest ?? (schedule ?? []).reduce((sum, item) => sum + (item.interestAmount ?? 0), 0);
     updateTotalInterest(calculatedTotal);
     updateApr(annualPercentageRate ?? 0);
+
+    // Display warnings
+    const warningSection = document.getElementById('warnings-section');
+    if (warnings && warnings.length > 0) {
+        warningSection.innerHTML = '<h3>Ostrzeżenia</h3><ul>' +
+            warnings.map(w => `<li>${w}</li>`).join('') + '</ul>';
+        warningSection.style.display = 'block';
+    } else {
+        warningSection.style.display = 'none';
+    }
+
+    // Display payment info for equal installments
+    const paymentInfo = document.getElementById('payment-info');
+    if (targetPayment && actualFinalPayment) {
+        const diff = Math.abs(actualFinalPayment - targetPayment);
+        if (diff >= 0.01) {
+            paymentInfo.innerHTML = `<p><strong>Rata docelowa:</strong> ${targetPayment.toFixed(2)} | <strong>Ostatnia rata:</strong> ${actualFinalPayment.toFixed(2)} (dostosowana)</p>`;
+            paymentInfo.style.display = 'block';
+        } else {
+            paymentInfo.style.display = 'none';
+        }
+    } else {
+        paymentInfo.style.display = 'none';
+    }
 }
 
 function buildPayload() {
@@ -399,7 +435,14 @@ document.getElementById('calculate').addEventListener('click', async () => {
             throw new Error(await response.text());
         }
         const result = await response.json();
-        displaySchedule(result.schedule, result.totalInterest, result.annualPercentageRate);
+        displaySchedule(
+            result.schedule,
+            result.totalInterest,
+            result.annualPercentageRate,
+            result.warnings,
+            result.targetLevelPayment,
+            result.actualFinalPayment
+        );
         actionStatus.textContent = 'Harmonogram został obliczony.';
         actionStatus.className = 'status success';
     } catch (error) {

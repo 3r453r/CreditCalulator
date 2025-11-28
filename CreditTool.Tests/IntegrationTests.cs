@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.Http.Json;
 using CreditTool.Models;
 using CreditTool.Services;
@@ -57,5 +58,15 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             .Sum();
 
         Assert.Equal(expectedTotalInterest, payload.TotalInterest);
+    }
+
+    [Fact]
+    public async Task RootRequest_IssuesAntiforgeryCookie()
+    {
+        var response = await _client.GetAsync("/");
+        response.EnsureSuccessStatusCode();
+
+        Assert.True(response.Headers.TryGetValues("Set-Cookie", out var cookies));
+        Assert.Contains(cookies, cookie => cookie.Contains(".AspNetCore.Antiforgery"));
     }
 }

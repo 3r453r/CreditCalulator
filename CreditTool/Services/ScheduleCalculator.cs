@@ -56,7 +56,16 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             {
                 var targetTotal = fixedTotalPayment!.Value;
                 principalPayment = targetTotal - interestRounded;
-                if (paymentDate == paymentDates[^1])
+                if (principalPayment < 0m)
+                {
+                    principalPayment = 0m;
+                }
+
+                if (paymentDate != paymentDates[^1])
+                {
+                    principalPayment = Math.Min(principalPayment, principalRemaining);
+                }
+                else
                 {
                     principalPayment = principalRemaining;
                 }
@@ -131,10 +140,12 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
 
             var principalPayment = totalPayment - interestRounded;
-            if (paymentDate == paymentDates[^1])
+            if (principalPayment < 0m)
             {
-                principalPayment = principalRemaining;
+                principalPayment = 0m;
             }
+
+            principalPayment = Math.Min(principalPayment, principalRemaining);
 
             principalPayment = RoundingService.Round(principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
             principalRemaining = RoundingService.Round(principalRemaining - principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);

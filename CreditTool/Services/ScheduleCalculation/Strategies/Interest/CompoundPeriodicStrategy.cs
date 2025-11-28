@@ -46,7 +46,20 @@ public class CompoundPeriodicStrategy : IInterestCalculationStrategy
         var periodRate = periodFactor - 1m;
         var interest = principal * periodRate;
 
-        return new InterestCalculationResult(interest, nominalRate, nominalRate, periodRate);
+        return new InterestCalculationResult(
+            Interest: interest,
+            EffectiveRate: nominalRate,
+            NominalRate: nominalRate,
+            EffectivePeriodRate: periodRate,
+            RateBreakdown: new List<RateBreakdownEntry>
+            {
+                new(
+                    Days: daysInPeriod,
+                    BaseRate: averageRate,
+                    MarginRate: marginRate,
+                    EffectiveRate: nominalRate,
+                    InterestContribution: interest)
+            });
     }
 
     private static InterestRatePeriod? FindRateForDate(IEnumerable<InterestRatePeriod> periods, DateTime date)

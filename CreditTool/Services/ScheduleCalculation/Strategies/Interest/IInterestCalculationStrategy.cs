@@ -33,4 +33,12 @@ public record InterestCalculationResult(
     decimal Interest,
     decimal EffectiveRate,
     decimal? NominalRate,
-    decimal? EffectivePeriodRate);
+    decimal? EffectivePeriodRate,
+    IReadOnlyList<RateBreakdownEntry> RateBreakdown);
+
+public record RateBreakdownEntry(
+    int Days,
+    decimal BaseRate,
+    decimal MarginRate,
+    decimal EffectiveRate,
+    decimal InterestContribution);

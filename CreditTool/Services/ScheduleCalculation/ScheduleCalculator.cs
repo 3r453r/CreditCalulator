@@ -32,6 +32,8 @@ public class ScheduleCalculator : IScheduleCalculator
             throw new ArgumentException("Credit end date must be after start date");
         }
 
+        ValidateRatePeriods(parameters, ratePeriods);
+
         var paymentDates = _paymentDateGenerator.GeneratePaymentDates(
             parameters.CreditStartDate,
             parameters.CreditEndDate,
@@ -387,6 +389,53 @@ public class ScheduleCalculator : IScheduleCalculator
         return itemWarnings;
     }
 
+    private static void ValidateRatePeriods(
+        CreditParameters parameters,
+        IReadOnlyCollection<InterestRatePeriod> ratePeriods)
+    {
+        if (!ratePeriods.Any())
+        {
+            throw new ArgumentException("Brak okresów stopy procentowej dla kalkulacji.");
+        }
+
+        var ordered = ratePeriods
+            .OrderBy(period => period.DateFrom)
+            .ToList();
+
+        foreach (var period in ordered)
+        {
+            if (period.DateFrom >= period.DateTo)
+            {
+                throw new ArgumentException(
+                    "Data początkowa okresu stopy procentowej musi być wcześniejszą niż końcowa.");
+            }
+        }
+
+        var first = ordered.First();
+        var last = ordered.Last();
+
+        if (first.DateFrom.Date > parameters.CreditStartDate.Date || last.DateTo.Date < parameters.CreditEndDate.Date)
+        {
+            throw new ArgumentException("Pomiędzy okresami stóp procentowych występuje przerwa obejmująca czas kredytu.");
+        }
+
+        for (var i = 1; i < ordered.Count; i++)
+        {
+            var previous = ordered[i - 1];
+            var current = ordered[i];
+
+            if (current.DateFrom.Date <= previous.DateTo.Date)
+            {
+                throw new ArgumentException("Okresy stóp procentowych nachodzą na siebie (nakładają się).");
+            }
+
+            if (current.DateFrom.Date > previous.DateTo.Date.AddDays(1))
+            {
+                throw new ArgumentException("Pomiędzy okresami stóp procentowych występuje przerwa.");
+            }
+        }
+    }
+
     #region Logging Methods
 
     private void LogRateChanges(
@@ -483,6 +532,19 @@ public class ScheduleCalculator : IScheduleCalculator
         int days)
     {
         var denominator = parameters.DayCountBasis == DayCountBasis.Actual360 ? 360m : 365m;
+        var rateBreakdown = result.RateBreakdown ?? Array.Empty<RateBreakdownEntry>();
+        var hasVariableRates = rateBreakdown.Count > 1;
+
+        if (hasVariableRates)
+        {
+            LogRateBreakdownDetails(
+                log,
+                paymentNumber,
+                paymentDate,
+                rateBreakdown,
+                days,
+                result.EffectiveRate);
+        }
 
         var interestDescription = parameters.InterestRateApplication switch
         {
@@ -521,6 +583,11 @@ public class ScheduleCalculator : IScheduleCalculator
         {
             interestSubstitution = $"{principal:F2} × średnia_dzienna";
             calculationDetails = $"(stopa śr.: {result.EffectiveRate:F4}%, dni: {days}, baza: {denominator})";
+
+            if (hasVariableRates)
+            {
+                calculationDetails += ", obliczona jako średnia ważona liczbą dni";
+            }
         }
 
         var rawInterest = result.Interest;
@@ -547,7 +614,52 @@ public class ScheduleCalculator : IScheduleCalculator
                     ["Days"] = days.ToString(),
                     ["DayCountBasis"] = denominator.ToString(),
                     ["RawInterest"] = $"{rawInterest:F6}",
-                    ["RoundedInterest"] = $"{interestRounded:F2}"
+                    ["RoundedInterest"] = $"{interestRounded:F2}",
+                    ["RateBreakdownCount"] = rateBreakdown.Count.ToString()
+                }
+            }
+        });
+    }
+
+    private void LogRateBreakdownDetails(
+        List<CalculationLogEntry> log,
+        int paymentNumber,
+        DateTime paymentDate,
+        IReadOnlyList<RateBreakdownEntry> breakdown,
+        int totalDays,
+        decimal weightedRate)
+    {
+        if (breakdown.Count <= 1 || totalDays == 0)
+        {
+            return;
+        }
+
+        var numerator = breakdown.Sum(entry => entry.EffectiveRate * entry.Days);
+        var weightedTerms = breakdown
+            .Select(entry => $"{entry.EffectiveRate:F4}% × {entry.Days}");
+
+        log.Add(new CalculationLogEntry
+        {
+            ShortDescription = "Średnia stopa w okresie",
+            SymbolicFormula = "stopa_śr = Σ(stopa_i × dni_i) / Σ dni",
+            SubstitutedFormula = $"({string.Join(" + ", weightedTerms)}) / {totalDays}",
+            Result =
+                $"{weightedRate:F4}% (łączny okres: {totalDays} dni)\n" +
+                "Uwaga: średnia ważona (po dniach) daje ten sam wynik co dzienne naliczanie odsetek przy stałym kapitale.",
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = paymentDate,
+                Type = LogEntryType.Detail,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["WeightedRate"] = $"{weightedRate:F4}%",
+                    ["TotalDays"] = totalDays.ToString(),
+                    ["Numerator"] = numerator.ToString("F6"),
+                    ["Breakdown"] = string.Join(
+                        "; ",
+                        breakdown.Select(entry =>
+                            $"{entry.EffectiveRate:F4}%×{entry.Days} dni (marża: {entry.MarginRate:F4}%, baza: {entry.BaseRate:F4}%)"))
                 }
             }
         });

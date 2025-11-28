@@ -20,18 +20,41 @@ public class SimpleInterestStrategy : IInterestCalculationStrategy
         var denominator = basis == DayCountBasis.Actual360 ? 360m : 365m;
 
         decimal interest = 0m;
-        decimal totalRate = 0m;
+        decimal totalEffectiveRate = 0m;
+        var breakdown = new List<RateBreakdownEntry>();
 
-        for (var day = from; day < to; day = day.AddDays(1))
+        var currentDate = from;
+        while (currentDate < to)
         {
-            var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
-            totalRate += rate;
-            var effectiveRate = rate + marginRate;
-            interest += principal * effectiveRate / 100m / denominator;
+            var period = FindRateForDate(ratePeriods, currentDate);
+            var nextChangeDate = period?.DateTo.AddDays(1) ?? to;
+            var chunkEnd = nextChangeDate > to ? to : nextChangeDate;
+
+            var days = Math.Max((chunkEnd - currentDate).Days, 0);
+            if (days == 0)
+            {
+                break;
+            }
+
+            var baseRate = period?.Rate ?? 0m;
+            var effectiveRate = baseRate + marginRate;
+            var contribution = principal * effectiveRate / 100m / denominator * days;
+
+            interest += contribution;
+            totalEffectiveRate += effectiveRate * days;
+
+            breakdown.Add(new RateBreakdownEntry(
+                Days: days,
+                BaseRate: baseRate,
+                MarginRate: marginRate,
+                EffectiveRate: effectiveRate,
+                InterestContribution: contribution));
+
+            currentDate = chunkEnd;
         }
 
-        var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
-        return new InterestCalculationResult(interest, averageRate + marginRate, null, null);
+        var averageEffectiveRate = daysInPeriod > 0 ? totalEffectiveRate / daysInPeriod : 0m;
+        return new InterestCalculationResult(interest, averageEffectiveRate, null, null, breakdown);
     }
 
     private static InterestRatePeriod? FindRateForDate(IEnumerable<InterestRatePeriod> periods, DateTime date)

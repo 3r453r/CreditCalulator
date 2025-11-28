@@ -49,7 +49,8 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var response = await _client.PostAsJsonAsync("/api/calculate", request);
         response.EnsureSuccessStatusCode();
 
-        var payload = await response.Content.ReadFromJsonAsync<ScheduleResponse>();
+        var payload = await response.Content.ReadFromJsonAsync(
+            CreditJsonContext.Default.ScheduleResponse);
         Assert.NotNull(payload);
         Assert.NotEmpty(payload!.Schedule);
 

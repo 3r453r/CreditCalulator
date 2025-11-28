@@ -23,7 +23,20 @@ public class ApplyRateNextPeriodStrategy : IInterestCalculationStrategy
         var effectiveRate = baseRate + marginRate;
         var interest = principal * effectiveRate / 100m / denominator * daysInPeriod;
 
-        return new InterestCalculationResult(interest, effectiveRate, null, null);
+        return new InterestCalculationResult(
+            Interest: interest,
+            EffectiveRate: effectiveRate,
+            NominalRate: null,
+            EffectivePeriodRate: null,
+            RateBreakdown: new List<RateBreakdownEntry>
+            {
+                new(
+                    Days: daysInPeriod,
+                    BaseRate: baseRate,
+                    MarginRate: marginRate,
+                    EffectiveRate: effectiveRate,
+                    InterestContribution: interest)
+            });
     }
 
     private static InterestRatePeriod? FindRateForDate(IEnumerable<InterestRatePeriod> periods, DateTime date)

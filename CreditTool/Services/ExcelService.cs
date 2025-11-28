@@ -5,7 +5,7 @@ namespace CreditTool.Services;
 
 public class ExcelService
 {
-    private static readonly Dictionary<string, string> ParameterKeyAliases = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, string> ParameterKeyAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Kwota netto"] = "NetValue",
         ["Marża"] = "MarginRate",
@@ -17,7 +17,8 @@ public class ExcelService
         ["Zaokrąglanie"] = "RoundingMode",
         ["Miejsca po przecinku"] = "RoundingDecimals",
         ["Prowizja przygotowawcza"] = "ProcessingFeeRate",
-        ["Spłata balonowa"] = "BulletRepayment"
+        ["Spłata balonowa"] = "BulletRepayment",
+        ["Typ spłaty"] = "PaymentType"
     };
 
     public (CreditParameters Parameters, List<InterestRatePeriod> Rates) Import(Stream fileStream)
@@ -38,7 +39,8 @@ public class ExcelService
         WriteRates(rateSheet, rates);
 
         var scheduleSheet = workbook.AddWorksheet("Harmonogram");
-        WriteSchedule(scheduleSheet, schedule, totalInterest);
+        var apr = AprCalculator.CalculateAnnualPercentageRate(parameters, schedule);
+        WriteSchedule(scheduleSheet, schedule, totalInterest, apr);
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
@@ -73,9 +75,10 @@ public class ExcelService
             CreditEndDate = ParseDate(parameterMap, "CreditEndDate"),
             DayCountBasis = ParseEnum(parameterMap, "DayCountBasis", DayCountBasis.Actual365),
             RoundingMode = ParseEnum(parameterMap, "RoundingMode", RoundingModeOption.Bankers),
-            RoundingDecimals = ParseInt(parameterMap, "RoundingDecimals", 2),
+            RoundingDecimals = ParseInt(parameterMap, "RoundingDecimals", 4),
             ProcessingFeeRate = ParseDecimal(parameterMap, "ProcessingFeeRate"),
-            BulletRepayment = ParseBool(parameterMap, "BulletRepayment")
+            BulletRepayment = ParseBool(parameterMap, "BulletRepayment"),
+            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments)
         };
     }
 
@@ -96,6 +99,7 @@ public class ExcelService
             ("RoundingMode", "Zaokrąglanie", parameters.RoundingMode),
             ("RoundingDecimals", "Miejsca po przecinku", parameters.RoundingDecimals),
             ("ProcessingFeeRate", "Prowizja przygotowawcza", parameters.ProcessingFeeRate),
+            ("PaymentType", "Typ spłaty", parameters.PaymentType),
             ("BulletRepayment", "Spłata balonowa", parameters.BulletRepayment)
         };
 
@@ -105,6 +109,7 @@ public class ExcelService
             ["PaymentDay"] = Enum.GetNames<PaymentDayOption>(),
             ["DayCountBasis"] = Enum.GetNames<DayCountBasis>(),
             ["RoundingMode"] = Enum.GetNames<RoundingModeOption>(),
+            ["PaymentType"] = Enum.GetNames<PaymentType>(),
             ["BulletRepayment"] = new[] { bool.TrueString, bool.FalseString }
         };
 
@@ -179,7 +184,7 @@ public class ExcelService
         worksheet.Columns().AdjustToContents();
     }
 
-    private static void WriteSchedule(IXLWorksheet worksheet, IEnumerable<ScheduleItem> schedule, decimal totalInterest)
+    private static void WriteSchedule(IXLWorksheet worksheet, IEnumerable<ScheduleItem> schedule, decimal totalInterest, decimal apr)
     {
         worksheet.Cell(1, 1).Value = "Data płatności";
         worksheet.Cell(1, 2).Value = "Dni w okresie";
@@ -202,11 +207,16 @@ public class ExcelService
             row++;
         }
 
-        var totalLabelCell = worksheet.Cell(row + 1, 1);
-        totalLabelCell.Value = "Łączne odsetki";
-        totalLabelCell.Style.Font.Bold = true;
-        worksheet.Cell(row + 1, 2).SetValue(totalInterest);
-        worksheet.Cell(row + 1, 2).Style.Font.Bold = true;
+        var summaryRow = row + 1;
+        worksheet.Cell(summaryRow, 1).Value = "Łączne odsetki";
+        worksheet.Cell(summaryRow, 2).SetValue(totalInterest);
+        worksheet.Cell(summaryRow, 1).Style.Font.Bold = true;
+        worksheet.Cell(summaryRow, 2).Style.Font.Bold = true;
+
+        worksheet.Cell(summaryRow + 1, 1).Value = "RRSO (APR)";
+        worksheet.Cell(summaryRow + 1, 2).SetValue(apr);
+        worksheet.Cell(summaryRow + 1, 1).Style.Font.Bold = true;
+        worksheet.Cell(summaryRow + 1, 2).Style.Font.Bold = true;
 
         worksheet.Columns().AdjustToContents();
     }
@@ -240,7 +250,7 @@ public class ExcelService
         return parameters.TryGetValue(key, out var value) && bool.TryParse(value, out var result) && result;
     }
 
-    private static string NormalizeParameterKey(string key)
+    internal static string NormalizeParameterKey(string key)
     {
         var trimmed = key.Trim();
         return ParameterKeyAliases.TryGetValue(trimmed, out var canonical)

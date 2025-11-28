@@ -1,3 +1,5 @@
+using System;
+
 namespace CreditTool.Models;
 
 public enum PaymentFrequency
@@ -26,8 +28,20 @@ public enum RoundingModeOption
     AwayFromZero
 }
 
+public enum PaymentType
+{
+    EqualInstallments,
+    DecreasingInstallments,
+    Bullet
+}
+
 public class CreditParameters
 {
+    public const int MinRoundingDecimals = 4;
+    public const int MaxRoundingDecimals = 10;
+
+    private int roundingDecimals = 4;
+
     public decimal NetValue { get; set; }
 
     public decimal MarginRate { get; set; }
@@ -44,7 +58,11 @@ public class CreditParameters
 
     public RoundingModeOption RoundingMode { get; set; } = RoundingModeOption.Bankers;
 
-    public int RoundingDecimals { get; set; } = 2;
+    public int RoundingDecimals
+    {
+        get => roundingDecimals;
+        set => roundingDecimals = Math.Clamp(value, MinRoundingDecimals, MaxRoundingDecimals);
+    }
 
     /// <summary>
     /// Optional upfront processing fee expressed as percentage of the net value.
@@ -52,7 +70,16 @@ public class CreditParameters
     public decimal ProcessingFeeRate { get; set; }
 
     /// <summary>
-    /// Flag that indicates whether principal is repaid evenly (default) or bullet at maturity.
+    /// Defines how the principal is amortized over time.
     /// </summary>
-    public bool BulletRepayment { get; set; }
+    public PaymentType PaymentType { get; set; } = PaymentType.DecreasingInstallments;
+
+    /// <summary>
+    /// Backward-compatible flag that maps to the bullet repayment option.
+    /// </summary>
+    public bool BulletRepayment
+    {
+        get => PaymentType == PaymentType.Bullet;
+        set => PaymentType = value ? PaymentType.Bullet : PaymentType.DecreasingInstallments;
+    }
 }

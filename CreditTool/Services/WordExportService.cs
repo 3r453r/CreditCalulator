@@ -19,7 +19,9 @@ public class WordExportService
         body.Append(CreateParagraph($"Kwota netto: {parameters.NetValue:N2}"));
         body.Append(CreateParagraph($"Marża: {parameters.MarginRate:N2}%"));
         body.Append(CreateParagraph($"Okres od {parameters.CreditStartDate:yyyy-MM-dd} do {parameters.CreditEndDate:yyyy-MM-dd}"));
+        var apr = AprCalculator.CalculateAnnualPercentageRate(parameters, schedule);
         body.Append(CreateParagraph($"Łączne odsetki: {totalInterest:N2}"));
+        body.Append(CreateParagraph($"RRSO (APR): {apr:N4}%"));
 
         body.Append(CreateHeading("Parametry"));
         body.Append(CreateParameterTable(parameters));
@@ -65,6 +67,7 @@ public class WordExportService
             ("Zaokrąglanie", parameters.RoundingMode.ToString()),
             ("Miejsca po przecinku", parameters.RoundingDecimals.ToString()),
             ("Prowizja przygotowawcza", $"{parameters.ProcessingFeeRate:N2}%"),
+            ("Typ spłaty", parameters.PaymentType.ToString()),
             ("Spłata balonowa", parameters.BulletRepayment ? "Tak" : "Nie")
         };
 

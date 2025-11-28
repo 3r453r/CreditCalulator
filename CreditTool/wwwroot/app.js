@@ -4,6 +4,7 @@ const importForm = document.getElementById('import-form');
 const importStatus = document.getElementById('import-status');
 const actionStatus = document.getElementById('action-status');
 const totalInterestElement = document.getElementById('total-interest');
+const aprElement = document.getElementById('apr');
 
 function addRateRow(rate) {
     const row = document.createElement('tr');
@@ -31,9 +32,9 @@ function readParametersFromForm() {
         creditEndDate: document.getElementById('credit-end').value,
         dayCountBasis: document.getElementById('day-count').value,
         roundingMode: document.getElementById('rounding-mode').value,
-        roundingDecimals: parseInt(document.getElementById('rounding-decimals').value || '2', 10),
+        roundingDecimals: parseInt(document.getElementById('rounding-decimals').value || '4', 10),
         processingFeeRate: parseFloat(document.getElementById('processing-fee').value) || 0,
-        bulletRepayment: document.getElementById('bullet-repayment').value === 'true'
+        paymentType: document.getElementById('payment-type').value
     };
 }
 
@@ -46,9 +47,9 @@ function setParametersToForm(parameters) {
     document.getElementById('credit-end').value = parameters.creditEndDate?.substring(0, 10) ?? '';
     document.getElementById('day-count').value = parameters.dayCountBasis ?? 'Actual365';
     document.getElementById('rounding-mode').value = parameters.roundingMode ?? 'Bankers';
-    document.getElementById('rounding-decimals').value = parameters.roundingDecimals ?? 2;
+    document.getElementById('rounding-decimals').value = parameters.roundingDecimals ?? 4;
     document.getElementById('processing-fee').value = parameters.processingFeeRate ?? 0;
-    document.getElementById('bullet-repayment').value = parameters.bulletRepayment ? 'true' : 'false';
+    document.getElementById('payment-type').value = parameters.paymentType ?? 'DecreasingInstallments';
 }
 
 function readRatesFromTable() {
@@ -72,7 +73,11 @@ function updateTotalInterest(totalInterest) {
     totalInterestElement.textContent = (totalInterest ?? 0).toFixed(2);
 }
 
-function displaySchedule(schedule, totalInterest) {
+function updateApr(apr) {
+    aprElement.textContent = `${(apr ?? 0).toFixed(4)}%`;
+}
+
+function displaySchedule(schedule, totalInterest, annualPercentageRate) {
     scheduleTableBody.innerHTML = '';
     (schedule ?? []).forEach(item => {
         const row = document.createElement('tr');
@@ -90,6 +95,7 @@ function displaySchedule(schedule, totalInterest) {
 
     const calculatedTotal = totalInterest ?? (schedule ?? []).reduce((sum, item) => sum + (item.interestAmount ?? 0), 0);
     updateTotalInterest(calculatedTotal);
+    updateApr(annualPercentageRate ?? 0);
 }
 
 function buildPayload() {
@@ -99,12 +105,25 @@ function buildPayload() {
     };
 }
 
+function getAntiforgeryToken() {
+    const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+function buildAntiforgeryHeaders(baseHeaders = {}) {
+    const token = getAntiforgeryToken();
+    if (token) {
+        return { ...baseHeaders, 'RequestVerificationToken': token };
+    }
+    return baseHeaders;
+}
+
 importForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     importStatus.textContent = '';
     const fileInput = document.getElementById('import-file');
     if (!fileInput.files.length) {
-        importStatus.textContent = 'Wybierz plik Excel do importu.';
+        importStatus.textContent = 'Wybierz plik Excel lub Word do importu.';
         importStatus.className = 'status error';
         return;
     }
@@ -113,7 +132,7 @@ importForm.addEventListener('submit', async (event) => {
     formData.append('file', fileInput.files[0]);
 
     try {
-        const response = await fetch('/api/import', { method: 'POST', body: formData });
+        const response = await fetch('/api/import', { method: 'POST', body: formData, headers: buildAntiforgeryHeaders() });
         if (!response.ok) {
             throw new Error(await response.text());
         }
@@ -135,20 +154,21 @@ document.getElementById('calculate').addEventListener('click', async () => {
         const payload = buildPayload();
         const response = await fetch('/api/calculate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         });
         if (!response.ok) {
             throw new Error(await response.text());
         }
         const result = await response.json();
-        displaySchedule(result.schedule, result.totalInterest);
+        displaySchedule(result.schedule, result.totalInterest, result.annualPercentageRate);
         actionStatus.textContent = 'Harmonogram został obliczony.';
         actionStatus.className = 'status success';
     } catch (error) {
         actionStatus.textContent = `Błąd obliczeń: ${error.message}`;
         actionStatus.className = 'status error';
         updateTotalInterest(0);
+        updateApr(0);
     }
 });
 
@@ -160,7 +180,7 @@ document.getElementById('export').addEventListener('click', async () => {
         const format = document.getElementById('export-format').value;
         const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         });
         if (!response.ok) {

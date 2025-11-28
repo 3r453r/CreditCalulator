@@ -16,9 +16,9 @@
         <section class="card">
             <h2>Import parametrów</h2>
             <form id="import-form">
-                <input type="file" id="import-file" accept=".xlsx,.xls" />
+                <input type="file" id="import-file" accept=".xlsx,.xls,.docx" />
                 <div class="actions">
-                    <button type="submit">Importuj z Excel</button>
+                    <button type="submit">Importuj z pliku</button>
                 </div>
             </form>
             <div id="import-status" class="status"></div>
@@ -67,15 +67,16 @@
                         </select>
                     </label>
                     <label>Liczba miejsc po przecinku
-                        <input type="number" id="rounding-decimals" value="2" min="0" max="6">
+                        <input type="number" id="rounding-decimals" value="4" min="4" max="10">
                     </label>
                     <label>Prowizja przygotowawcza (%)
                         <input type="number" step="0.01" id="processing-fee" value="0">
                     </label>
-                    <label>Spłata balonowa
-                        <select id="bullet-repayment">
-                            <option value="false">Nie (równe raty kapitałowe)</option>
-                            <option value="true">Tak (kapitał na koniec)</option>
+                    <label>Typ spłaty
+                        <select id="payment-type">
+                            <option value="DecreasingInstallments">Raty malejące</option>
+                            <option value="EqualInstallments">Raty równe</option>
+                            <option value="Bullet">Spłata balonowa</option>
                         </select>
                     </label>
                 </div>
@@ -108,6 +109,7 @@
         <section class="card">
             <h2>Harmonogram</h2>
             <p><strong>Łączne odsetki:</strong> <span id="total-interest">0.00</span></p>
+            <p><strong>RRSO (APR):</strong> <span id="apr">0.0000%</span></p>
             <table id="schedule-table">
                 <thead>
                     <tr>

@@ -22,7 +22,7 @@ public class ScheduleCalculatorTests
             CreditEndDate = new DateTime(2024, 2, 1),
             DayCountBasis = DayCountBasis.Actual365,
             RoundingMode = RoundingModeOption.Bankers,
-            RoundingDecimals = 2
+            RoundingDecimals = 4
         };
 
         var schedule = calculator.Calculate(parameters, new[]
@@ -39,7 +39,8 @@ public class ScheduleCalculatorTests
         var payment = schedule[0];
         Assert.Equal(31, payment.DaysInPeriod);
         Assert.Equal(5m, payment.InterestRate);
-        Assert.Equal(42.47m, payment.InterestAmount);
+        var expectedInterest = RoundingService.Round(10000m * 0.05m / 365m * 31, parameters.RoundingMode, parameters.RoundingDecimals);
+        Assert.Equal(expectedInterest, payment.InterestAmount);
         Assert.Equal(10000m, payment.PrincipalPayment);
         Assert.Equal(0m, payment.RemainingPrincipal);
     }
@@ -58,7 +59,7 @@ public class ScheduleCalculatorTests
             CreditEndDate = new DateTime(2024, 4, 2),
             DayCountBasis = DayCountBasis.Actual365,
             RoundingMode = RoundingModeOption.Bankers,
-            RoundingDecimals = 2,
+            RoundingDecimals = 4,
             BulletRepayment = true
         };
 
@@ -85,10 +86,10 @@ public class ScheduleCalculatorTests
         Assert.Equal(5000m, schedule.Last().PrincipalPayment);
         Assert.Equal(0m, schedule.Last().RemainingPrincipal);
 
-        var firstDayInterest = 5000m * 0.03m / 365m;
-        var secondDayInterest = 5000m * 0.03m / 365m;
-        var thirdDayInterest = 5000m * 0.06m / 365m;
-        var totalInterest = Math.Round((firstDayInterest + secondDayInterest + thirdDayInterest), 2, MidpointRounding.ToEven);
+        var firstDayInterest = RoundingService.Round(5000m * 0.03m / 365m, parameters.RoundingMode, parameters.RoundingDecimals);
+        var secondDayInterest = RoundingService.Round(5000m * 0.03m / 365m, parameters.RoundingMode, parameters.RoundingDecimals);
+        var thirdDayInterest = RoundingService.Round(5000m * 0.06m / 365m, parameters.RoundingMode, parameters.RoundingDecimals);
+        var totalInterest = firstDayInterest + secondDayInterest + thirdDayInterest;
         Assert.Equal(totalInterest, schedule.Sum(p => p.InterestAmount));
     }
 
@@ -106,7 +107,7 @@ public class ScheduleCalculatorTests
             CreditEndDate = new DateTime(2024, 6, 15),
             DayCountBasis = DayCountBasis.Actual360,
             RoundingMode = RoundingModeOption.AwayFromZero,
-            RoundingDecimals = 2
+            RoundingDecimals = 4
         };
 
         var rates = new[]
@@ -126,13 +127,13 @@ public class ScheduleCalculatorTests
 
         var firstDays = (new DateTime(2024, 6, 1) - parameters.CreditStartDate).Days;
         var firstRaw = parameters.NetValue * totalRate / 100m / 360m * firstDays;
-        var firstRounded = Math.Round(firstRaw, 2, MidpointRounding.AwayFromZero);
+        var firstRounded = RoundingService.Round(firstRaw, parameters.RoundingMode, parameters.RoundingDecimals);
         Assert.Equal(firstRounded, schedule[0].InterestAmount);
 
         var secondDays = (parameters.CreditEndDate - new DateTime(2024, 6, 1)).Days;
         var remainingPrincipal = parameters.NetValue - schedule[0].PrincipalPayment;
         var secondRaw = remainingPrincipal * totalRate / 100m / 360m * secondDays;
-        var secondRounded = Math.Round(secondRaw, 2, MidpointRounding.AwayFromZero);
+        var secondRounded = RoundingService.Round(secondRaw, parameters.RoundingMode, parameters.RoundingDecimals);
         Assert.Equal(secondRounded, schedule[1].InterestAmount);
     }
 }

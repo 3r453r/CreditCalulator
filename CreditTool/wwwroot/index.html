@@ -60,6 +60,13 @@
                             <option value="Actual360">Actual / 360</option>
                         </select>
                     </label>
+                    <label>Sposób naliczania odsetek
+                        <select id="interest-application">
+                            <option value="DailyAccrual">Zmienna stopa w trakcie okresu</option>
+                            <option value="AverageRatePerPeriod">Średnia stopa za okres (mies./kw.)</option>
+                            <option value="ApplyChangedRateNextPeriod">Nowa stopa od kolejnego okresu (mies./kw.)</option>
+                        </select>
+                    </label>
                     <label>Zaokraglanie
                         <select id="rounding-mode">
                             <option value="Bankers">Bankowe (do parzystej)</option>

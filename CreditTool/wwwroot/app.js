@@ -6,6 +6,20 @@ const actionStatus = document.getElementById('action-status');
 const exportLogButton = document.getElementById('export-log');
 const totalInterestElement = document.getElementById('total-interest');
 const aprElement = document.getElementById('apr');
+const interestApplicationSelect = document.getElementById('interest-application');
+
+function enforceInterestApplicationAvailability() {
+    const frequency = document.getElementById('payment-frequency').value;
+    const isLongPeriod = frequency === 'Monthly' || frequency === 'Quarterly';
+
+    Array.from(interestApplicationSelect.options).forEach(option => {
+        option.disabled = !isLongPeriod && option.value !== 'DailyAccrual';
+    });
+
+    if (!isLongPeriod && interestApplicationSelect.value !== 'DailyAccrual') {
+        interestApplicationSelect.value = 'DailyAccrual';
+    }
+}
 
 function addRateRow(rate) {
     // Prepare values for the inputs
@@ -35,6 +49,8 @@ function addRateRow(rate) {
 }
 
 document.getElementById('add-rate').addEventListener('click', () => addRateRow());
+document.getElementById('payment-frequency').addEventListener('change', enforceInterestApplicationAvailability);
+enforceInterestApplicationAvailability();
 
 function readParametersFromForm() {
     return {
@@ -45,6 +61,7 @@ function readParametersFromForm() {
         creditStartDate: document.getElementById('credit-start').value,
         creditEndDate: document.getElementById('credit-end').value,
         dayCountBasis: document.getElementById('day-count').value,
+        interestRateApplication: interestApplicationSelect.value,
         roundingMode: document.getElementById('rounding-mode').value,
         roundingDecimals: parseInt(document.getElementById('rounding-decimals').value || '4', 10),
         processingFeeRate: parseFloat(document.getElementById('processing-fee').value) || 0,
@@ -61,11 +78,14 @@ function setParametersToForm(parameters) {
     document.getElementById('credit-start').value = parameters.creditStartDate?.substring(0, 10) ?? '';
     document.getElementById('credit-end').value = parameters.creditEndDate?.substring(0, 10) ?? '';
     document.getElementById('day-count').value = parameters.dayCountBasis ?? 'Actual365';
+    interestApplicationSelect.value = parameters.interestRateApplication ?? 'DailyAccrual';
     document.getElementById('rounding-mode').value = parameters.roundingMode ?? 'Bankers';
     document.getElementById('rounding-decimals').value = parameters.roundingDecimals ?? 4;
     document.getElementById('processing-fee').value = parameters.processingFeeRate ?? 0;
     document.getElementById('processing-fee-amount').value = parameters.processingFeeAmount ?? 0;
     document.getElementById('payment-type').value = parameters.paymentType ?? 'DecreasingInstallments';
+
+    enforceInterestApplicationAvailability();
 }
 
 function readRatesFromTable() {

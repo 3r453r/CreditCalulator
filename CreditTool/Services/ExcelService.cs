@@ -42,7 +42,8 @@ public class ExcelService
         ["Prowizja przygotowawcza"] = "ProcessingFeeRate",
         ["Prowizja przygotowawcza (kwota)"] = "ProcessingFeeAmount",
         ["Spłata balonowa"] = "BulletRepayment",
-        ["Typ spłaty"] = "PaymentType"
+        ["Typ spłaty"] = "PaymentType",
+        ["Sposób naliczania odsetek"] = "InterestRateApplication"
     };
 
     public (CreditParameters Parameters, List<InterestRatePeriod> Rates) Import(Stream fileStream, string extension)
@@ -188,7 +189,8 @@ public class ExcelService
             ProcessingFeeRate = ParseDecimal(parameterMap, "ProcessingFeeRate"),
             ProcessingFeeAmount = ParseDecimal(parameterMap, "ProcessingFeeAmount"),
             BulletRepayment = ParseBool(parameterMap, "BulletRepayment"),
-            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments)
+            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments),
+            InterestRateApplication = ParseEnum(parameterMap, "InterestRateApplication", InterestRateApplication.DailyAccrual)
         };
 
         var rates = ReadOdsRates(rateTable);
@@ -234,7 +236,8 @@ public class ExcelService
             ProcessingFeeRate = ParseDecimal(parameterMap, "ProcessingFeeRate"),
             ProcessingFeeAmount = ParseDecimal(parameterMap, "ProcessingFeeAmount"),
             BulletRepayment = ParseBool(parameterMap, "BulletRepayment"),
-            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments)
+            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments),
+            InterestRateApplication = ParseEnum(parameterMap, "InterestRateApplication", InterestRateApplication.DailyAccrual)
         };
     }
 
@@ -257,7 +260,8 @@ public class ExcelService
             ("ProcessingFeeRate", "Prowizja przygotowawcza", parameters.ProcessingFeeRate),
             ("ProcessingFeeAmount", "Prowizja przygotowawcza (kwota)", parameters.ProcessingFeeAmount),
             ("PaymentType", "Typ spłaty", parameters.PaymentType),
-            ("BulletRepayment", "Spłata balonowa", parameters.BulletRepayment)
+            ("BulletRepayment", "Spłata balonowa", parameters.BulletRepayment),
+            ("InterestRateApplication", "Sposób naliczania odsetek", parameters.InterestRateApplication)
         };
 
         var choiceOptions = new Dictionary<string, string[]>
@@ -267,7 +271,8 @@ public class ExcelService
             ["DayCountBasis"] = Enum.GetNames<DayCountBasis>(),
             ["RoundingMode"] = Enum.GetNames<RoundingModeOption>(),
             ["PaymentType"] = Enum.GetNames<PaymentType>(),
-            ["BulletRepayment"] = new[] { bool.TrueString, bool.FalseString }
+            ["BulletRepayment"] = new[] { bool.TrueString, bool.FalseString },
+            ["InterestRateApplication"] = Enum.GetNames<InterestRateApplication>()
         };
 
         var row = 2;
@@ -463,7 +468,8 @@ public class ExcelService
             ("Prowizja przygotowawcza", parameters.ProcessingFeeRate),
             ("Prowizja przygotowawcza (kwota)", parameters.ProcessingFeeAmount),
             ("Typ spłaty", parameters.PaymentType),
-            ("Spłata balonowa", parameters.BulletRepayment)
+            ("Spłata balonowa", parameters.BulletRepayment),
+            ("Sposób naliczania odsetek", parameters.InterestRateApplication)
         };
 
         foreach (var (label, value) in values)

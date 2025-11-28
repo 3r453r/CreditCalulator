@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<IScheduleCalculator, DayToDayScheduleCalculator>();
 builder.Services.AddSingleton<ExcelService>();
+builder.Services.AddSingleton<LogExportService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -82,14 +83,14 @@ app.MapPost("/api/export", (CalculationRequest request, string? format, ISchedul
     {
         if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
         {
-    var jsonPayload = excelService.ExportJson(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+            var jsonPayload = excelService.ExportJson(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
             var jsonFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
             return Results.File(jsonPayload, "application/json", jsonFileName);
         }
 
         if (string.Equals(format, "ods", StringComparison.OrdinalIgnoreCase))
         {
-    var odsPayload = excelService.ExportOds(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+            var odsPayload = excelService.ExportOds(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
             var odsFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.ods";
             return Results.File(odsPayload, "application/vnd.oasis.opendocument.spreadsheet", odsFileName);
         }
@@ -99,6 +100,21 @@ app.MapPost("/api/export", (CalculationRequest request, string? format, ISchedul
         return Results.File(payload, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
     catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+});
+
+app.MapPost("/api/export-log", (CalculationRequest request, IScheduleCalculator calculator, LogExportService logExportService) =>
+{
+    try
+    {
+        var result = calculator.Calculate(request.Parameters, request.Rates);
+        var logPayload = logExportService.Export(result.CalculationLog);
+        var logFileName = $"Harmonogram_Log_{DateTime.UtcNow:yyyyMMddHHmmss}.md";
+        return Results.File(logPayload, "text/markdown; charset=utf-8", logFileName);
+    }
+    catch (ArgumentException ex)
     {
         return Results.BadRequest(ex.Message);
     }

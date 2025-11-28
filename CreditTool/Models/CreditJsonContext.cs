@@ -14,4 +14,5 @@ namespace CreditTool.Models;
 [JsonSerializable(typeof(DayCountBasis))]
 [JsonSerializable(typeof(RoundingModeOption))]
 [JsonSerializable(typeof(PaymentType))]
+[JsonSerializable(typeof(InterestRateApplication))]
 public partial class CreditJsonContext : JsonSerializerContext;

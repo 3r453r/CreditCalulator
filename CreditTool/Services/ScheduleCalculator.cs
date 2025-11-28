@@ -209,7 +209,7 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
     {
         var low = 0m;
         var high = Math.Max(parameters.NetValue, parameters.NetValue + 1000m);
-        var tolerance = 0.01m;
+        var tolerance = 0.0001m;
 
         var remainingHigh = SimulateRemainingPrincipal(parameters, ratePeriods, paymentDates, high);
         var guard = 0;

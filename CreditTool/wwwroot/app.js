@@ -7,6 +7,35 @@ const exportLogButton = document.getElementById('export-log');
 const totalInterestElement = document.getElementById('total-interest');
 const aprElement = document.getElementById('apr');
 const interestApplicationSelect = document.getElementById('interest-application');
+const creditStartInput = document.getElementById('credit-start');
+const creditEndInput = document.getElementById('credit-end');
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+function parseDateInput(value) {
+    if (!value) {
+        return null;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateInput(date) {
+    return date ? date.toISOString().substring(0, 10) : '';
+}
+
+function addDays(date, days) {
+    const copy = new Date(date);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+}
+
+function getCreditDates() {
+    return {
+        startDate: parseDateInput(creditStartInput.value),
+        endDate: parseDateInput(creditEndInput.value)
+    };
+}
 
 function enforceInterestApplicationAvailability() {
     const frequency = document.getElementById('payment-frequency').value;
@@ -22,9 +51,8 @@ function enforceInterestApplicationAvailability() {
 }
 
 function addRateRow(rate) {
-    // Prepare values for the inputs
     const dateFromValue = rate?.dateFrom
-        ? rate.dateFrom.split('T')[0]   // "2025-11-28T00:00:00" -> "2025-11-28"
+        ? rate.dateFrom.split('T')[0]
         : '';
 
     const dateToValue = rate?.dateTo
@@ -43,12 +71,61 @@ function addRateRow(rate) {
 
     row.querySelector('.remove-rate').addEventListener('click', () => {
         row.remove();
+        alignRateBoundariesToCreditDates();
     });
 
     rateTableBody.appendChild(row);
 }
 
-document.getElementById('add-rate').addEventListener('click', () => addRateRow());
+function alignRateBoundariesToCreditDates() {
+    const rows = rateTableBody.querySelectorAll('tr');
+    if (!rows.length) {
+        return;
+    }
+
+    const { startDate, endDate } = getCreditDates();
+    if (!startDate || !endDate) {
+        return;
+    }
+
+    rows[0].querySelector('.date-from').value = formatDateInput(startDate);
+    rows[rows.length - 1].querySelector('.date-to').value = formatDateInput(endDate);
+}
+
+function handleAddRateRow() {
+    const rows = rateTableBody.querySelectorAll('tr');
+    const { startDate, endDate } = getCreditDates();
+
+    if (!rows.length) {
+        addRateRow({
+            dateFrom: formatDateInput(startDate),
+            dateTo: formatDateInput(endDate)
+        });
+        return;
+    }
+
+    const lastRow = rows[rows.length - 1];
+    const lastStart = parseDateInput(lastRow.querySelector('.date-from').value) ?? startDate;
+    const lastEnd = parseDateInput(lastRow.querySelector('.date-to').value) ?? endDate ?? lastStart;
+    const periodDays = lastStart && lastEnd ? Math.max(Math.round((lastEnd - lastStart) / DAY_IN_MS), 0) : 0;
+
+    if (endDate && periodDays > 0) {
+        const adjustedPreviousEnd = addDays(endDate, -periodDays);
+        lastRow.querySelector('.date-to').value = formatDateInput(adjustedPreviousEnd);
+
+        const newStart = addDays(adjustedPreviousEnd, 1);
+        addRateRow({
+            dateFrom: formatDateInput(newStart),
+            dateTo: formatDateInput(endDate)
+        });
+    } else {
+        addRateRow();
+    }
+
+    alignRateBoundariesToCreditDates();
+}
+
+document.getElementById('add-rate').addEventListener('click', handleAddRateRow);
 document.getElementById('payment-frequency').addEventListener('change', enforceInterestApplicationAvailability);
 enforceInterestApplicationAvailability();
 
@@ -103,6 +180,58 @@ function populateRateTable(rates) {
     if (rateTableBody.children.length === 0) {
         addRateRow();
     }
+
+    alignRateBoundariesToCreditDates();
+}
+
+function validateRatePeriods(rates) {
+    const { startDate, endDate } = getCreditDates();
+    if (!startDate || !endDate) {
+        throw new Error('Podaj datę rozpoczęcia i zakończenia kredytu.');
+    }
+
+    if (!rates.length) {
+        throw new Error('Dodaj co najmniej jeden okres stopy procentowej.');
+    }
+
+    const normalized = rates.map((rate, index) => {
+        const dateFrom = parseDateInput(rate.dateFrom);
+        const dateTo = parseDateInput(rate.dateTo);
+
+        if (!dateFrom || !dateTo) {
+            throw new Error(`Wiersz ${index + 1}: podaj daty początku i końca okresu.`);
+        }
+
+        if (dateFrom > dateTo) {
+            throw new Error(`Wiersz ${index + 1}: data "Od" nie może być po dacie "Do".`);
+        }
+
+        return { ...rate, dateFrom, dateTo };
+    });
+
+    const sorted = normalized.sort((a, b) => a.dateFrom - b.dateFrom);
+
+    if (sorted[0].dateFrom.getTime() !== startDate.getTime()) {
+        throw new Error('Pierwszy okres stopy musi zaczynać się w dniu uruchomienia kredytu.');
+    }
+
+    if (sorted[sorted.length - 1].dateTo.getTime() !== endDate.getTime()) {
+        throw new Error('Ostatni okres stopy musi kończyć się w dniu zakończenia kredytu.');
+    }
+
+    for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1];
+        const current = sorted[i];
+        const expectedStart = addDays(prev.dateTo, 1).getTime();
+
+        if (current.dateFrom.getTime() < expectedStart) {
+            throw new Error(`Okres ${i + 1} nakłada się na poprzedni.`);
+        }
+
+        if (current.dateFrom.getTime() !== expectedStart) {
+            throw new Error(`Pomiędzy okresem ${i} i ${i + 1} występuje przerwa.`);
+        }
+    }
 }
 
 function updateTotalInterest(totalInterest) {
@@ -139,6 +268,12 @@ function buildPayload() {
         parameters: readParametersFromForm(),
         rates: readRatesFromTable()
     };
+}
+
+function buildValidatedPayload() {
+    const payload = buildPayload();
+    validateRatePeriods(payload.rates);
+    return payload;
 }
 
 function getAntiforgeryToken() {
@@ -183,11 +318,14 @@ importForm.addEventListener('submit', async (event) => {
     }
 });
 
+creditStartInput.addEventListener('change', alignRateBoundariesToCreditDates);
+creditEndInput.addEventListener('change', alignRateBoundariesToCreditDates);
+
 document.getElementById('calculate').addEventListener('click', async () => {
     actionStatus.textContent = 'Trwa obliczanie...';
     actionStatus.className = 'status';
     try {
-        const payload = buildPayload();
+        const payload = buildValidatedPayload();
         const response = await fetch('/api/calculate', {
             method: 'POST',
             headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
@@ -213,7 +351,7 @@ document.getElementById('export').addEventListener('click', async () => {
     actionStatus.className = 'status';
 
     try {
-        const payload = buildPayload();
+        const payload = buildValidatedPayload();
         const format = document.getElementById('export-format').value;
 
         const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, {
@@ -272,7 +410,7 @@ exportLogButton.addEventListener('click', async () => {
     actionStatus.textContent = 'Trwa przygotowywanie logu obliczeń...';
     actionStatus.className = 'status';
     try {
-        const payload = buildPayload();
+        const payload = buildValidatedPayload();
         const response = await fetch('/api/export-log', {
             method: 'POST',
             headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
@@ -298,10 +436,12 @@ exportLogButton.addEventListener('click', async () => {
     }
 });
 
-// Initialize with one blank rate row and set default dates
-populateRateTable();
+// Initialize with default dates and one rate row aligned to them
 const today = new Date().toISOString().substring(0, 10);
 const inSixMonths = new Date();
 inSixMonths.setMonth(inSixMonths.getMonth() + 6);
-document.getElementById('credit-start').value = today;
-document.getElementById('credit-end').value = inSixMonths.toISOString().substring(0, 10);
+creditStartInput.value = today;
+creditEndInput.value = inSixMonths.toISOString().substring(0, 10);
+
+populateRateTable();
+alignRateBoundariesToCreditDates();

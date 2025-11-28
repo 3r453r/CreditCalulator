@@ -61,19 +61,16 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             var denominator = parameters.DayCountBasis == DayCountBasis.Actual360 ? 360m : 365m;
             var interestDescription = parameters.InterestRateApplication switch
             {
-                InterestRateApplication.AverageRatePerPeriod => "Naliczanie odsetek (\u015brednia stopa w okresie)",
                 InterestRateApplication.ApplyChangedRateNextPeriod => "Naliczanie odsetek (zmiana stopy od kolejnego okresu)",
                 _ => "Naliczanie odsetek"
             };
             var interestFormula = parameters.InterestRateApplication switch
             {
-                InterestRateApplication.AverageRatePerPeriod => "odsetki = saldo * (\u015brednia_stopa + mar\u017ca) / 100 / baza_dni * dni",
                 InterestRateApplication.ApplyChangedRateNextPeriod => "odsetki = saldo * (stopa_na_pocz\u0105tek + mar\u017ca) / 100 / baza_dni * dni",
                 _ => "odsetki = \u03a3(saldo * (stawka_dzienna + mar\u017ca) / 100 / baza_dni)"
             };
             var interestSubstitution = parameters.InterestRateApplication switch
             {
-                InterestRateApplication.AverageRatePerPeriod => $"odsetki = {principalRemaining:F2} * ({baseRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
                 InterestRateApplication.ApplyChangedRateNextPeriod => $"odsetki = {principalRemaining:F2} * ({baseRate:F4} + {parameters.MarginRate:F4}) / 100 / {denominator} * {daysInPeriod}",
                 _ => $"odsetki = {principalRemaining:F2} * \u015brednia_stawka_dzienna (baza: {denominator}, dni: {daysInPeriod})"
             };
@@ -276,19 +273,6 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
 
         switch (application)
         {
-            case InterestRateApplication.AverageRatePerPeriod:
-            {
-                decimal totalRate = 0m;
-                for (var day = from; day < to; day = day.AddDays(1))
-                {
-                    totalRate += FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
-                }
-
-                var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
-                var effectiveRate = averageRate + marginRate;
-                var interest = principal * effectiveRate / 100m / denominator * daysInPeriod;
-                return (interest, effectiveRate);
-            }
             case InterestRateApplication.ApplyChangedRateNextPeriod:
             {
                 var baseRate = FindRateForDate(ratePeriods, from)?.Rate ?? 0m;

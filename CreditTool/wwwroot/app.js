@@ -3,6 +3,7 @@ const scheduleTableBody = document.querySelector('#schedule-table tbody');
 const importForm = document.getElementById('import-form');
 const importStatus = document.getElementById('import-status');
 const actionStatus = document.getElementById('action-status');
+const exportLogButton = document.getElementById('export-log');
 const totalInterestElement = document.getElementById('total-interest');
 const aprElement = document.getElementById('apr');
 
@@ -200,6 +201,36 @@ document.getElementById('export').addEventListener('click', async () => {
         actionStatus.className = 'status success';
     } catch (error) {
         actionStatus.textContent = `Eksport nieudany: ${error.message}`;
+        actionStatus.className = 'status error';
+    }
+});
+
+exportLogButton.addEventListener('click', async () => {
+    actionStatus.textContent = 'Trwa przygotowywanie logu obliczeń...';
+    actionStatus.className = 'status';
+    try {
+        const payload = buildPayload();
+        const response = await fetch('/api/export-log', {
+            method: 'POST',
+            headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'harmonogram-log.txt';
+        link.click();
+        window.URL.revokeObjectURL(url);
+
+        actionStatus.textContent = 'Log obliczeń został pobrany.';
+        actionStatus.className = 'status success';
+    } catch (error) {
+        actionStatus.textContent = `Nie udało się pobrać logu: ${error.message}`;
         actionStatus.className = 'status error';
     }
 });

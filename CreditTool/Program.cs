@@ -81,7 +81,9 @@ app.MapPost("/api/calculate", (
     IScheduleCalculator calculator,
     CalculatorConfiguration config) =>
 {
-    var result = calculator.Calculate(request.Parameters, request.Rates, config);
+    // Always include log to ensure consistency between displayed schedule and log export
+    // This guarantees the log matches exactly what the user sees in the UI
+    var result = calculator.Calculate(request.Parameters, request.Rates, config, includeLog: true);
     var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
 
     var response = BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters);

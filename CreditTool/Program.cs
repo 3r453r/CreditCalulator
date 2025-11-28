@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<IScheduleCalculator, DayToDayScheduleCalculator>();
 builder.Services.AddSingleton<ExcelService>();
+builder.Services.AddSingleton<LogExportService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -67,16 +68,16 @@ app.MapPost("/api/import", async (IFormFile file, ExcelService excelService) =>
 
 app.MapPost("/api/calculate", (CalculationRequest request, IScheduleCalculator calculator) =>
 {
-    var schedule = calculator.Calculate(request.Parameters, request.Rates);
-    var roundedSchedule = RoundCashSchedule(schedule, request.Parameters.RoundingMode);
-    return Results.Ok(BuildScheduleResponse(roundedSchedule, request.Parameters));
+    var result = calculator.Calculate(request.Parameters, request.Rates);
+    var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
+    return Results.Ok(BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters));
 });
 
 app.MapPost("/api/export", (CalculationRequest request, string? format, IScheduleCalculator calculator, ExcelService excelService) =>
 {
-    var schedule = calculator.Calculate(request.Parameters, request.Rates);
-    var roundedSchedule = RoundCashSchedule(schedule, request.Parameters.RoundingMode);
-    var response = BuildScheduleResponse(roundedSchedule, request.Parameters);
+    var result = calculator.Calculate(request.Parameters, request.Rates);
+    var roundedSchedule = RoundCashSchedule(result.Schedule, request.Parameters.RoundingMode);
+    var response = BuildScheduleResponse(roundedSchedule, result.CalculationLog, request.Parameters);
 
     try
     {
@@ -104,15 +105,31 @@ app.MapPost("/api/export", (CalculationRequest request, string? format, ISchedul
     }
 });
 
+app.MapPost("/api/export-log", (CalculationRequest request, IScheduleCalculator calculator, LogExportService logExportService) =>
+{
+    try
+    {
+        var result = calculator.Calculate(request.Parameters, request.Rates);
+        var logPayload = logExportService.Export(result.CalculationLog);
+        var logFileName = $"Harmonogram_Log_{DateTime.UtcNow:yyyyMMddHHmmss}.md";
+        return Results.File(logPayload, "text/markdown; charset=utf-8", logFileName);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+});
+
 app.Run();
 
-static ScheduleResponse BuildScheduleResponse(IReadOnlyList<ScheduleItem> schedule, CreditParameters parameters)
+static ScheduleResponse BuildScheduleResponse(IReadOnlyList<ScheduleItem> schedule, List<CalculationLogEntry> calculationLog, CreditParameters parameters)
 {
     var totalInterest = RoundingService.Round(schedule.Sum(item => item.InterestAmount), parameters.RoundingMode, 2);
 
     return new ScheduleResponse
     {
         Schedule = schedule.ToList(),
+        CalculationLog = calculationLog,
         TotalInterest = totalInterest,
         AnnualPercentageRate = AprCalculator.CalculateAnnualPercentageRate(parameters, schedule)
     };

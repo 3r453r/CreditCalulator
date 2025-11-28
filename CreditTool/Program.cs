@@ -12,6 +12,7 @@ builder.Services.AddSingleton<WordImportService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, CreditJsonContext.Default);
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddAntiforgery();

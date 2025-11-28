@@ -133,6 +133,179 @@ function enforceInterestApplicationAvailability() {
     }
 }
 
+// Lock/unlock functionality
+function toggleLock(row, field, button) {
+    const dataField = field === 'start' ? 'startLocked' : 'endLocked';
+    const isLocked = row.dataset[dataField] === 'true';
+    row.dataset[dataField] = !isLocked ? 'true' : 'false';
+    button.textContent = !isLocked ? '🔒' : '🔓';
+}
+
+function isDateLocked(row, field) {
+    if (!row) return false;
+    const dataField = field === 'start' ? 'startLocked' : 'endLocked';
+    return row.dataset[dataField] === 'true';
+}
+
+// Helper to calculate days between dates
+function daysBetween(date1, date2) {
+    const oneDay = 24 * 60 * 60 * 1000;
+    return Math.round((date2 - date1) / oneDay);
+}
+
+// Redistribute dates equally in an unlocked segment
+function redistributeDatesInSegment(rows, startDate, endDate) {
+    if (rows.length === 0) return;
+
+    const totalDays = daysBetween(startDate, endDate) + 1;
+    const daysPerRow = Math.floor(totalDays / rows.length);
+    const remainder = totalDays % rows.length;
+
+    let currentDate = new Date(startDate);
+
+    rows.forEach((row, index) => {
+        const rowDays = daysPerRow + (index < remainder ? 1 : 0);
+        const rowStart = new Date(currentDate);
+        const rowEnd = addDays(currentDate, rowDays - 1);
+
+        // Ensure last row ends exactly at endDate
+        if (index === rows.length - 1) {
+            row.querySelector('.date-to').value = formatDateInput(endDate);
+        } else {
+            row.querySelector('.date-to').value = formatDateInput(rowEnd);
+        }
+
+        row.querySelector('.date-from').value = formatDateInput(rowStart);
+        currentDate = addDays(rowEnd, 1);
+    });
+}
+
+// Cascade changes forward through unlocked rows
+function cascadeForward(startRow) {
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const startIndex = rows.indexOf(startRow);
+
+    if (startIndex === -1 || startIndex >= rows.length - 1) return;
+
+    // Find the next locked end boundary
+    let endIndex = startIndex + 1;
+    while (endIndex < rows.length && !isDateLocked(rows[endIndex], 'end')) {
+        endIndex++;
+    }
+
+    // Get the segment to redistribute
+    const segmentRows = rows.slice(startIndex + 1, endIndex + 1);
+    if (segmentRows.length === 0) return;
+
+    // Calculate segment boundaries
+    const segmentStart = parseDateInput(startRow.querySelector('.date-to').value);
+    const segmentStartPlusOne = addDays(segmentStart, 1);
+
+    let segmentEnd;
+    if (endIndex < rows.length) {
+        segmentEnd = parseDateInput(rows[endIndex].querySelector('.date-to').value);
+    } else {
+        const { endDate } = getCreditDates();
+        segmentEnd = endDate;
+    }
+
+    // Redistribute dates in the segment
+    redistributeDatesInSegment(segmentRows, segmentStartPlusOne, segmentEnd);
+}
+
+// Cascade changes backward through unlocked rows
+function cascadeBackward(startRow) {
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const startIndex = rows.indexOf(startRow);
+
+    if (startIndex === -1 || startIndex === 0) return;
+
+    // Find the previous locked start boundary
+    let beginIndex = startIndex - 1;
+    while (beginIndex >= 0 && !isDateLocked(rows[beginIndex], 'start')) {
+        beginIndex--;
+    }
+
+    // Get the segment to redistribute
+    const segmentRows = rows.slice(beginIndex, startIndex);
+    if (segmentRows.length === 0) return;
+
+    // Calculate segment boundaries
+    let segmentStart;
+    if (beginIndex >= 0) {
+        segmentStart = parseDateInput(rows[beginIndex].querySelector('.date-from').value);
+    } else {
+        const { startDate } = getCreditDates();
+        segmentStart = startDate;
+    }
+
+    const segmentEnd = parseDateInput(startRow.querySelector('.date-from').value);
+    const segmentEndMinusOne = addDays(segmentEnd, -1);
+
+    // Redistribute dates in the segment
+    redistributeDatesInSegment(segmentRows, segmentStart, segmentEndMinusOne);
+}
+
+// Handle start date changes in auto-continuity mode
+function handleStartDateChange(row) {
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const rowIndex = rows.indexOf(row);
+    const newStartDate = parseDateInput(row.querySelector('.date-from').value);
+    const { startDate: creditStart, endDate: creditEnd } = getCreditDates();
+
+    if (!newStartDate) return;
+
+    // If this is the first row and there's a gap at the start, insert a new row
+    if (rowIndex === 0 && newStartDate > creditStart) {
+        const gapEnd = addDays(newStartDate, -1);
+        addRateRow({
+            dateFrom: formatDateInput(creditStart),
+            dateTo: formatDateInput(gapEnd)
+        }, true);
+        return;
+    }
+
+    // If there's a previous row and its end is not locked, adjust it
+    if (rowIndex > 0) {
+        const prevRow = rows[rowIndex - 1];
+        if (!isDateLocked(prevRow, 'end')) {
+            const newPrevEnd = addDays(newStartDate, -1);
+            prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
+            cascadeBackward(prevRow);
+        }
+    }
+}
+
+// Handle end date changes in auto-continuity mode
+function handleEndDateChange(row) {
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const rowIndex = rows.indexOf(row);
+    const newEndDate = parseDateInput(row.querySelector('.date-to').value);
+    const { startDate: creditStart, endDate: creditEnd } = getCreditDates();
+
+    if (!newEndDate) return;
+
+    // If this is the last row and there's a gap at the end, append a new row
+    if (rowIndex === rows.length - 1 && newEndDate < creditEnd) {
+        const gapStart = addDays(newEndDate, 1);
+        addRateRow({
+            dateFrom: formatDateInput(gapStart),
+            dateTo: formatDateInput(creditEnd)
+        }, false);
+        return;
+    }
+
+    // If there's a next row and its start is not locked, adjust it
+    if (rowIndex < rows.length - 1) {
+        const nextRow = rows[rowIndex + 1];
+        if (!isDateLocked(nextRow, 'start')) {
+            const newNextStart = addDays(newEndDate, 1);
+            nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
+            cascadeForward(row);
+        }
+    }
+}
+
 function addRateRow(rate, prepend = false) {
     const dateFromValue = rate?.dateFrom
         ? rate.dateFrom.split('T')[0]
@@ -145,16 +318,43 @@ function addRateRow(rate, prepend = false) {
     const rateValue = rate?.rate ?? '';
 
     const row = document.createElement('tr');
+    row.dataset.startLocked = 'false';
+    row.dataset.endLocked = 'false';
+
     row.innerHTML = `
+        <td><button type="button" class="lock-btn lock-start" title="Zablokuj datę początkową">🔓</button></td>
         <td><input type="date" class="date-from" value="${dateFromValue}" required></td>
+        <td><button type="button" class="lock-btn lock-end" title="Zablokuj datę końcową">🔓</button></td>
         <td><input type="date" class="date-to" value="${dateToValue}" required></td>
         <td><input type="number" step="0.01" class="rate-value" value="${rateValue}" required></td>
         <td><button type="button" class="secondary remove-rate">Usuń</button></td>
     `;
 
+    // Lock button handlers
+    row.querySelector('.lock-start').addEventListener('click', (e) => {
+        toggleLock(row, 'start', e.target);
+    });
+
+    row.querySelector('.lock-end').addEventListener('click', (e) => {
+        toggleLock(row, 'end', e.target);
+    });
+
     row.querySelector('.remove-rate').addEventListener('click', () => {
         row.remove();
         alignRateBoundariesToCreditDates();
+    });
+
+    // Date change listeners for auto-continuity
+    row.querySelector('.date-from').addEventListener('change', () => {
+        if (document.getElementById('auto-continuity').checked) {
+            handleStartDateChange(row);
+        }
+    });
+
+    row.querySelector('.date-to').addEventListener('change', () => {
+        if (document.getElementById('auto-continuity').checked) {
+            handleEndDateChange(row);
+        }
     });
 
     if (prepend && rateTableBody.firstChild) {
@@ -180,10 +380,11 @@ function alignRateBoundariesToCreditDates() {
 }
 
 function handleAddRateRow() {
-    const rows = rateTableBody.querySelectorAll('tr');
+    const rows = Array.from(rateTableBody.querySelectorAll('tr'));
     const { startDate, endDate } = getCreditDates();
-    const firstPeriodEnd = getFirstPaymentPeriodEnd(startDate, endDate);
+    const autoContinuity = document.getElementById('auto-continuity').checked;
 
+    // If no rows exist, add first row spanning full credit period
     if (!rows.length) {
         addRateRow({
             dateFrom: formatDateInput(startDate),
@@ -192,21 +393,70 @@ function handleAddRateRow() {
         return;
     }
 
-    const firstRow = rows[0];
-
-    if (startDate && firstPeriodEnd && firstPeriodEnd < endDate) {
-        // Add new row at start position
-        addRateRow({
-            dateFrom: formatDateInput(startDate),
-            dateTo: formatDateInput(firstPeriodEnd)
-        }, true);
-
-        // Adjust old first row's start date to day after new row's end
-        const newStart = addDays(firstPeriodEnd, 1);
-        firstRow.querySelector('.date-from').value = formatDateInput(newStart);
-    } else {
-        // If there's only one payment period or invalid dates, add with empty values
+    // Without auto-continuity, just add an empty row at start
+    if (!autoContinuity) {
         addRateRow({}, true);
+        return;
+    }
+
+    // With auto-continuity, use smart algorithm
+    const firstPeriodEnd = getFirstPaymentPeriodEnd(startDate, endDate);
+    const paymentDates = buildPaymentDates(startDate, endDate,
+        document.getElementById('payment-frequency').value,
+        document.getElementById('payment-day').value);
+    const numPaymentPeriods = paymentDates.length;
+
+    // Determine new row duration
+    let newRowEnd;
+
+    if (rows.length < numPaymentPeriods && firstPeriodEnd) {
+        // Use first payment period if we have fewer rows than periods
+        newRowEnd = firstPeriodEnd;
+    } else {
+        // Find the first unlocked segment and divide it
+        const firstRow = rows[0];
+
+        // Find the end of the first unlocked segment
+        let segmentEndIndex = 0;
+        while (segmentEndIndex < rows.length && !isDateLocked(rows[segmentEndIndex], 'end')) {
+            segmentEndIndex++;
+        }
+
+        const segmentRows = rows.slice(0, segmentEndIndex + 1);
+        const segmentEnd = segmentEndIndex < rows.length
+            ? parseDateInput(rows[segmentEndIndex].querySelector('.date-to').value)
+            : endDate;
+
+        // Divide the unlocked segment equally among existing rows + new row
+        const totalDays = daysBetween(startDate, segmentEnd) + 1;
+        const daysForNewRow = Math.floor(totalDays / (segmentRows.length + 1));
+
+        newRowEnd = addDays(startDate, Math.max(0, daysForNewRow - 1));
+    }
+
+    // Add the new row at start
+    addRateRow({
+        dateFrom: formatDateInput(startDate),
+        dateTo: formatDateInput(newRowEnd)
+    }, true);
+
+    // Redistribute the remaining unlocked rows
+    const updatedRows = Array.from(rateTableBody.querySelectorAll('tr'));
+    const newRowEndPlusOne = addDays(newRowEnd, 1);
+
+    // Find the first segment of unlocked rows after the new row
+    let segmentEndIndex = 1;
+    while (segmentEndIndex < updatedRows.length && !isDateLocked(updatedRows[segmentEndIndex], 'end')) {
+        segmentEndIndex++;
+    }
+
+    if (segmentEndIndex > 1) {
+        const segmentRows = updatedRows.slice(1, segmentEndIndex + 1);
+        const segmentEnd = segmentEndIndex < updatedRows.length
+            ? parseDateInput(updatedRows[segmentEndIndex].querySelector('.date-to').value)
+            : endDate;
+
+        redistributeDatesInSegment(segmentRows, newRowEndPlusOne, segmentEnd);
     }
 
     alignRateBoundariesToCreditDates();

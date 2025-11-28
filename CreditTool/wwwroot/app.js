@@ -7,16 +7,29 @@ const totalInterestElement = document.getElementById('total-interest');
 const aprElement = document.getElementById('apr');
 
 function addRateRow(rate) {
+    // Prepare values for the inputs
+    const dateFromValue = rate?.dateFrom
+        ? rate.dateFrom.split('T')[0]   // "2025-11-28T00:00:00" -> "2025-11-28"
+        : '';
+
+    const dateToValue = rate?.dateTo
+        ? rate.dateTo.split('T')[0]
+        : '';
+
+    const rateValue = rate?.rate ?? '';
+
     const row = document.createElement('tr');
     row.innerHTML = `
-        <td><input type="date" class="date-from" value="${rate?.dateFrom ?? ''}" required></td>
-        <td><input type="date" class="date-to" value="${rate?.dateTo ?? ''}" required></td>
-        <td><input type="number" step="0.01" class="rate-value" value="${rate?.rate ?? 0}" required></td>
+        <td><input type="date" class="date-from" value="${dateFromValue}" required></td>
+        <td><input type="date" class="date-to" value="${dateToValue}" required></td>
+        <td><input type="number" step="0.01" class="rate-value" value="${rateValue}" required></td>
         <td><button type="button" class="secondary remove-rate">Usuń</button></td>
     `;
+
     row.querySelector('.remove-rate').addEventListener('click', () => {
         row.remove();
     });
+
     rateTableBody.appendChild(row);
 }
 
@@ -177,25 +190,55 @@ document.getElementById('calculate').addEventListener('click', async () => {
 document.getElementById('export').addEventListener('click', async () => {
     actionStatus.textContent = 'Trwa eksport...';
     actionStatus.className = 'status';
+
     try {
         const payload = buildPayload();
         const format = document.getElementById('export-format').value;
+
         const response = await fetch(`/api/export?format=${encodeURIComponent(format)}`, {
             method: 'POST',
             headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         });
+
         if (!response.ok) {
             throw new Error(await response.text());
         }
+
+        // --- NEW: try to read filename from Content-Disposition ---
+        const contentDisposition = response.headers.get('content-disposition');
+        let fileName;
+
+        if (contentDisposition) {
+            // handle filename="..." and filename*=UTF-8''...
+            const fileNameStarMatch = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+            const fileNameMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i)
+                || contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+
+            if (fileNameStarMatch && fileNameStarMatch[1]) {
+                fileName = decodeURIComponent(fileNameStarMatch[1]);
+            } else if (fileNameMatch && fileNameMatch[1]) {
+                fileName = fileNameMatch[1].trim();
+            }
+        }
+
+        // Fallback if header missing / unparsable
+        if (!fileName) {
+            const extension =
+                format === 'ods' ? 'ods' :
+                    format === 'json' ? 'json' :
+                        'xlsx';
+            fileName = `harmonogram.${extension}`;
+        }
+
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        const extension = format === 'ods' ? 'ods' : format === 'json' ? 'json' : 'xlsx';
-        link.download = `harmonogram.${extension}`;
+        link.download = fileName; // <-- now uses backend name or fallback
         link.click();
         window.URL.revokeObjectURL(url);
+
         actionStatus.textContent = 'Eksport zakończony powodzeniem.';
         actionStatus.className = 'status success';
     } catch (error) {
@@ -203,6 +246,7 @@ document.getElementById('export').addEventListener('click', async () => {
         actionStatus.className = 'status error';
     }
 });
+
 
 // Initialize with one blank rate row and set default dates
 populateRateTable();

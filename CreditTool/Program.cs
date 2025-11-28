@@ -7,8 +7,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<IScheduleCalculator, DayToDayScheduleCalculator>();
 builder.Services.AddSingleton<ExcelService>();
-builder.Services.AddSingleton<WordExportService>();
-builder.Services.AddSingleton<WordImportService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -40,35 +38,31 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAntiforgery();
 
-app.MapPost("/api/import", async (IFormFile file, ExcelService excelService, WordImportService wordImportService) =>
+app.MapPost("/api/import", async (IFormFile file, ExcelService excelService) =>
 {
     if (file.Length == 0)
     {
         return Results.BadRequest("File is empty");
     }
 
-    await using var stream = file.OpenReadStream();
-
-    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-    (CreditParameters Parameters, List<InterestRatePeriod> Rates) result = extension switch
+    try
     {
-        ".docx" => wordImportService.Import(stream),
-        _ => excelService.Import(stream)
-    };
+        await using var stream = file.OpenReadStream();
 
-    return Results.Ok(new CalculationRequest { Parameters = result.Parameters, Rates = result.Rates });
-});
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        (CreditParameters Parameters, List<InterestRatePeriod> Rates) result = extension switch
+        {
+            ".xlsx" or ".ods" => excelService.Import(stream, extension),
+            ".json" => await excelService.ImportJsonAsync(stream),
+            _ => throw new InvalidOperationException("Unsupported import format. Use .xlsx, .ods or .json.")
+        };
 
-app.MapPost("/api/import/word", async (IFormFile file, WordImportService wordImportService) =>
-{
-    if (file.Length == 0)
-    {
-        return Results.BadRequest("File is empty");
+        return Results.Ok(new CalculationRequest { Parameters = result.Parameters, Rates = result.Rates });
     }
-
-    await using var stream = file.OpenReadStream();
-    var result = wordImportService.Import(stream);
-    return Results.Ok(new CalculationRequest { Parameters = result.Parameters, Rates = result.Rates });
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
 });
 
 app.MapPost("/api/calculate", (CalculationRequest request, IScheduleCalculator calculator) =>
@@ -78,22 +72,36 @@ app.MapPost("/api/calculate", (CalculationRequest request, IScheduleCalculator c
     return Results.Ok(BuildScheduleResponse(roundedSchedule, request.Parameters));
 });
 
-app.MapPost("/api/export", (CalculationRequest request, string? format, IScheduleCalculator calculator, ExcelService excelService, WordExportService wordExportService) =>
+app.MapPost("/api/export", (CalculationRequest request, string? format, IScheduleCalculator calculator, ExcelService excelService) =>
 {
     var schedule = calculator.Calculate(request.Parameters, request.Rates);
     var roundedSchedule = RoundCashSchedule(schedule, request.Parameters.RoundingMode);
     var response = BuildScheduleResponse(roundedSchedule, request.Parameters);
 
-    if (string.Equals(format, "word", StringComparison.OrdinalIgnoreCase))
+    try
     {
-        var wordPayload = wordExportService.Export(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest);
-        var wordFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.docx";
-        return Results.File(wordPayload, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", wordFileName);
-    }
+        if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            var jsonPayload = excelService.ExportJson(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+            var jsonFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.json";
+            return Results.File(jsonPayload, "application/json", jsonFileName);
+        }
 
-    var payload = excelService.Export(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest);
-    var fileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx";
-    return Results.File(payload, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+        if (string.Equals(format, "ods", StringComparison.OrdinalIgnoreCase))
+        {
+            var odsPayload = excelService.ExportOds(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+            var odsFileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.ods";
+            return Results.File(odsPayload, "application/vnd.oasis.opendocument.spreadsheet", odsFileName);
+        }
+
+        var payload = excelService.ExportXlsx(request.Parameters, request.Rates, roundedSchedule, response.TotalInterest, response.AnnualPercentageRate);
+        var fileName = $"Harmonogram_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx";
+        return Results.File(payload, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
 });
 
 app.Run();

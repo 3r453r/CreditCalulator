@@ -38,7 +38,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                 new()
                 {
                     DateFrom = new DateTime(2024, 1, 1),
-                    DateTo = new DateTime(2024, 12, 31),
+                    DateTo = new DateTime(2025, 1, 1),
                     Rate = 5m
                 }
             }

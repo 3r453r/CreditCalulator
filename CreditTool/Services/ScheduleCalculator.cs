@@ -16,6 +16,8 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
             throw new ArgumentException("Credit end date must be after start date");
         }
 
+        var validatedRatePeriods = ValidateRatePeriods(parameters, ratePeriods);
+
         var paymentDates = BuildPaymentDates(parameters.CreditStartDate, parameters.CreditEndDate, parameters.PaymentFrequency, parameters.PaymentDay);
         if (paymentDates.Count == 0 || paymentDates[^1] != parameters.CreditEndDate)
         {
@@ -36,14 +38,14 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         decimal? fixedTotalPayment = null;
         if (parameters.PaymentType == PaymentType.EqualInstallments)
         {
-            fixedTotalPayment = CalculateLevelPayment(parameters, ratePeriods, paymentDates);
+            fixedTotalPayment = CalculateLevelPayment(parameters, validatedRatePeriods, paymentDates);
         }
 
         var schedule = new List<ScheduleItem>();
         var calculationLog = new List<CalculationLogEntry>();
         var previousDate = parameters.CreditStartDate;
 
-        var recalculatedRatePeriods = ratePeriods
+        var recalculatedRatePeriods = validatedRatePeriods
             .Where(period => period.DateFrom > parameters.CreditStartDate && period.DateFrom < parameters.CreditEndDate)
             .OrderBy(period => period.DateFrom);
 
@@ -69,7 +71,7 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
                 Result = $"{daysInPeriod} dni"
             });
 
-            var (interest, effectiveRate) = CalculateInterest(previousDate, paymentDate, principalRemaining, parameters.MarginRate, ratePeriods, parameters.DayCountBasis, parameters.InterestRateApplication);
+            var (interest, effectiveRate) = CalculateInterest(previousDate, paymentDate, principalRemaining, parameters.MarginRate, validatedRatePeriods, parameters.DayCountBasis, parameters.InterestRateApplication);
             var interestRounded = RoundingService.Round(interest, parameters.RoundingMode, parameters.RoundingDecimals);
 
             var baseRate = Math.Max(effectiveRate - parameters.MarginRate, 0m);
@@ -272,6 +274,68 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         }
 
         return principalRemaining;
+    }
+
+    private static IReadOnlyList<InterestRatePeriod> ValidateRatePeriods(
+        CreditParameters parameters,
+        IReadOnlyCollection<InterestRatePeriod> ratePeriods)
+    {
+        if (ratePeriods == null || ratePeriods.Count == 0)
+        {
+            throw new ArgumentException("Dodaj co najmniej jeden okres stopy procentowej.");
+        }
+
+        var normalized = ratePeriods
+            .Select((period, index) => new { period.Rate, DateFrom = period.DateFrom.Date, DateTo = period.DateTo.Date, Index = index })
+            .ToList();
+
+        foreach (var entry in normalized)
+        {
+            if (entry.DateFrom >= entry.DateTo)
+            {
+                throw new ArgumentException($"Okres {entry.Index + 1} musi mieć datę początku wcześniejszą niż datę końca.");
+            }
+        }
+
+        var sorted = normalized.OrderBy(entry => entry.DateFrom).ToList();
+        var creditStart = parameters.CreditStartDate.Date;
+        var creditEnd = parameters.CreditEndDate.Date;
+
+        if (sorted[0].DateFrom != creditStart)
+        {
+            throw new ArgumentException("Pierwszy okres stopy musi zaczynać się w dniu uruchomienia kredytu.");
+        }
+
+        if (sorted[^1].DateTo != creditEnd)
+        {
+            throw new ArgumentException("Ostatni okres stopy musi kończyć się w dniu zakończenia kredytu.");
+        }
+
+        for (var i = 1; i < sorted.Count; i++)
+        {
+            var previous = sorted[i - 1];
+            var current = sorted[i];
+            var expectedStart = previous.DateTo.AddDays(1);
+
+            if (current.DateFrom < expectedStart)
+            {
+                throw new ArgumentException($"Okres {i + 1} nakłada się na poprzedni.");
+            }
+
+            if (current.DateFrom > expectedStart)
+            {
+                throw new ArgumentException($"Pomiędzy okresem {i} i {i + 1} występuje przerwa.");
+            }
+        }
+
+        return sorted
+            .Select(entry => new InterestRatePeriod
+            {
+                DateFrom = entry.DateFrom,
+                DateTo = entry.DateTo,
+                Rate = entry.Rate
+            })
+            .ToList();
     }
 
     private static (decimal Interest, decimal EffectiveRate) CalculateInterest(

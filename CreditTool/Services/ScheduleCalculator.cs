@@ -99,17 +99,27 @@ public class DayToDayScheduleCalculator : IScheduleCalculator
         IReadOnlyList<DateTime> paymentDates)
     {
         var low = 0m;
-        var high = Math.Max(parameters.NetValue * 10m, parameters.NetValue + 1000m);
+        var high = Math.Max(parameters.NetValue, parameters.NetValue + 1000m);
         var tolerance = 0.01m;
+
+        var remainingHigh = SimulateRemainingPrincipal(parameters, ratePeriods, paymentDates, high);
+        var guard = 0;
+        while (remainingHigh > 0m && guard < 25)
+        {
+            low = high;
+            high *= 2m;
+            remainingHigh = SimulateRemainingPrincipal(parameters, ratePeriods, paymentDates, high);
+            guard++;
+        }
 
         for (var i = 0; i < 200; i++)
         {
             var mid = (low + high) / 2m;
             var remaining = SimulateRemainingPrincipal(parameters, ratePeriods, paymentDates, mid);
 
-            if (Math.Abs(remaining) <= tolerance)
+            if (Math.Abs(high - low) <= tolerance)
             {
-                return RoundingService.Round(mid, parameters.RoundingMode, parameters.RoundingDecimals);
+                break;
             }
 
             if (remaining > 0)

@@ -185,6 +185,9 @@ public class ScheduleCalculatorTests
             Assert.True(remaining[i] <= remaining[i - 1] + 0.0001m, "Remaining principal should decrease over time");
         }
 
+        Assert.InRange(schedule.First().PrincipalPayment, 0.01m, parameters.NetValue - 0.01m);
+        Assert.True(schedule.First().PrincipalPayment < schedule.Last().PrincipalPayment,
+            "For equal installments, principal part should grow over time");
         Assert.Equal(0m, schedule.Last().RemainingPrincipal);
     }
 }

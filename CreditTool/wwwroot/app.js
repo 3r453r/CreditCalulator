@@ -12,6 +12,9 @@ const creditEndInput = document.getElementById('credit-end');
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
+// Store the last calculation log for export consistency
+let lastCalculationLog = null;
+
 function parseDateInput(value) {
     if (!value) {
         return null;
@@ -309,12 +312,14 @@ function handleStartDateChange(row) {
         return;
     }
 
-    // If there's a previous row and the boundary is not locked, adjust it
+    // If there's a previous row, adjust it to maintain continuity
     if (rowIndex > 0) {
         const prevRow = rows[rowIndex - 1];
+        const newPrevEnd = addDays(newStartDate, -1);
+        prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
+
+        // Only cascade if the boundary is not locked
         if (!isBoundaryLocked(prevRow, 'end')) {
-            const newPrevEnd = addDays(newStartDate, -1);
-            prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
             cascadeBackward(prevRow);
         }
     }
@@ -339,12 +344,14 @@ function handleEndDateChange(row) {
         return;
     }
 
-    // If there's a next row and the boundary is not locked, adjust it
+    // If there's a next row, adjust it to maintain continuity
     if (rowIndex < rows.length - 1) {
         const nextRow = rows[rowIndex + 1];
+        const newNextStart = addDays(newEndDate, 1);
+        nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
+
+        // Only cascade if the boundary is not locked
         if (!isBoundaryLocked(row, 'end')) {
-            const newNextStart = addDays(newEndDate, 1);
-            nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
             cascadeForward(row);
         }
     }
@@ -772,6 +779,10 @@ document.getElementById('calculate').addEventListener('click', async () => {
             throw new Error(await response.text());
         }
         const result = await response.json();
+
+        // Store calculation log for later export (ensures consistency)
+        lastCalculationLog = result.calculationLog;
+
         displaySchedule(
             result.schedule,
             result.totalInterest,
@@ -855,6 +866,12 @@ exportLogButton.addEventListener('click', async () => {
     actionStatus.className = 'status';
     try {
         const payload = buildValidatedPayload();
+
+        // Include the stored calculation log to ensure it matches the displayed schedule
+        if (lastCalculationLog) {
+            payload.calculationLog = lastCalculationLog;
+        }
+
         const response = await fetch('/api/export-log', {
             method: 'POST',
             headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),

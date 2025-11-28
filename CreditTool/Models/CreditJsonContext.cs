@@ -17,4 +17,7 @@ namespace CreditTool.Models;
 [JsonSerializable(typeof(PaymentType))]
 [JsonSerializable(typeof(InterestRateApplication))]
 [JsonSerializable(typeof(LogEntryType))]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    Converters = new[] { typeof(JsonStringEnumConverter) })]
 public partial class CreditJsonContext : JsonSerializerContext;

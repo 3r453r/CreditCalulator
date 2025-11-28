@@ -21,13 +21,37 @@ public class CompoundDailyStrategy : IInterestCalculationStrategy
 
         decimal factor = 1m;
         decimal totalRate = 0m;
+        var breakdown = new List<RateBreakdownEntry>();
 
-        for (var day = from; day < to; day = day.AddDays(1))
+        var currentDate = from;
+        while (currentDate < to)
         {
-            var rate = FindRateForDate(ratePeriods, day)?.Rate ?? 0m;
-            totalRate += rate;
-            var effectiveRateDaily = rate + marginRate;
-            factor *= 1m + (effectiveRateDaily / 100m) / denominator;
+            var period = FindRateForDate(ratePeriods, currentDate);
+            var nextChangeDate = period?.DateTo.AddDays(1) ?? to;
+            var chunkEnd = nextChangeDate > to ? to : nextChangeDate;
+
+            var days = Math.Max((chunkEnd - currentDate).Days, 0);
+            if (days == 0)
+            {
+                break;
+            }
+
+            var baseRate = period?.Rate ?? 0m;
+            var effectiveRate = baseRate + marginRate;
+            var previousFactor = factor;
+            var chunkFactor = (decimal)Math.Pow(1.0 + (double)(effectiveRate / 100m / denominator), days);
+
+            factor *= chunkFactor;
+            totalRate += baseRate * days;
+
+            breakdown.Add(new RateBreakdownEntry(
+                Days: days,
+                BaseRate: baseRate,
+                MarginRate: marginRate,
+                EffectiveRate: effectiveRate,
+                InterestContribution: principal * previousFactor * (chunkFactor - 1m)));
+
+            currentDate = chunkEnd;
         }
 
         var averageRate = daysInPeriod > 0 ? totalRate / daysInPeriod : 0m;
@@ -40,15 +64,7 @@ public class CompoundDailyStrategy : IInterestCalculationStrategy
             EffectiveRate: nominalRate,
             NominalRate: nominalRate,
             EffectivePeriodRate: periodRate,
-            RateBreakdown: new List<RateBreakdownEntry>
-            {
-                new(
-                    Days: daysInPeriod,
-                    BaseRate: averageRate,
-                    MarginRate: marginRate,
-                    EffectiveRate: nominalRate,
-                    InterestContribution: interest)
-            });
+            RateBreakdown: breakdown);
     }
 
     private static InterestRatePeriod? FindRateForDate(IEnumerable<InterestRatePeriod> periods, DateTime date)

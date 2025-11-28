@@ -574,20 +574,56 @@ public class ScheduleCalculator : IScheduleCalculator
 
         string interestSubstitution;
         string calculationDetails;
-        if (result.NominalRate.HasValue && result.EffectivePeriodRate.HasValue)
+        switch (parameters.InterestRateApplication)
         {
-            interestSubstitution = $"{principal:F2} × {result.EffectivePeriodRate.Value:F6}";
-            calculationDetails = $"(stopa nom.: {result.NominalRate.Value:F4}%, dni: {days}, baza: {denominator})";
-        }
-        else
-        {
-            interestSubstitution = $"{principal:F2} × średnia_dzienna";
-            calculationDetails = $"(stopa śr.: {result.EffectiveRate:F4}%, dni: {days}, baza: {denominator})";
+            case InterestRateApplication.CompoundDaily when rateBreakdown.Count > 0:
+                var factors = rateBreakdown
+                    .Select(entry => $"(1 + {entry.EffectiveRate:F4}%/100/{denominator})^{entry.Days}");
+                interestSubstitution = $"{principal:F2} × ({string.Join(" × ", factors)} - 1)";
+                calculationDetails = $"(dni: {days}, baza: {denominator})";
+                break;
 
-            if (hasVariableRates)
-            {
-                calculationDetails += ", obliczona jako średnia ważona liczbą dni";
-            }
+            case InterestRateApplication.CompoundDaily:
+                var effectiveDailyRate = result.NominalRate ?? result.EffectiveRate;
+                interestSubstitution =
+                    $"{principal:F2} × ((1 + {effectiveDailyRate:F4}%/100/{denominator})^{days} - 1)";
+                calculationDetails = $"(dni: {days}, baza: {denominator})";
+                break;
+
+            case InterestRateApplication.CompoundMonthly or InterestRateApplication.CompoundQuarterly:
+                var periodsPerYear = parameters.InterestRateApplication == InterestRateApplication.CompoundMonthly ? 12 : 4;
+                var nominalRate = result.NominalRate ?? result.EffectiveRate;
+                interestSubstitution =
+                    $"{principal:F2} × ((1 + {nominalRate:F4}%/100/{periodsPerYear})^({periodsPerYear}×{days}/{denominator}) - 1)";
+                calculationDetails = $"(dni: {days}, baza: {denominator})";
+                break;
+
+            case InterestRateApplication.ApplyChangedRateNextPeriod:
+                var appliedRate = rateBreakdown.FirstOrDefault()?.EffectiveRate ?? result.EffectiveRate;
+                interestSubstitution = $"{principal:F2} × ({appliedRate:F4}%/100/{denominator}) × {days}";
+                calculationDetails = string.Empty;
+                break;
+
+            default:
+                if (rateBreakdown.Count > 0 && days > 0)
+                {
+                    var weightedTerms = rateBreakdown
+                        .Select(entry => $"{entry.EffectiveRate:F4}%×{entry.Days}");
+                    interestSubstitution =
+                        $"{principal:F2} × (({string.Join(" + ", weightedTerms)}) / {days}) × {days}/{denominator}";
+                    calculationDetails = string.Empty;
+
+                    if (hasVariableRates)
+                    {
+                        calculationDetails = "(średnia ważona liczbą dni)";
+                    }
+                }
+                else
+                {
+                    interestSubstitution = $"{principal:F2} × {result.EffectiveRate:F6}";
+                    calculationDetails = $"(dni: {days}, baza: {denominator})";
+                }
+                break;
         }
 
         var rawInterest = result.Interest;

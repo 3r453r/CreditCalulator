@@ -13,7 +13,8 @@ public class ExcelServiceTests
     public void ImportAcceptsDayFirstFormats(string fromText, string toText, int expectedFromYear, int expectedFromMonth, int expectedFromDay, int expectedToYear, int expectedToMonth, int expectedToDay)
     {
         using var workbook = new XLWorkbook();
-        workbook.AddWorksheet("Parametry");
+        var parameterSheet = workbook.AddWorksheet("Parametry");
+        WriteRequiredParameters(parameterSheet);
         var rateSheet = workbook.AddWorksheet("Stopy procentowe");
         rateSheet.Cell(1, 1).Value = "Od";
         rateSheet.Cell(1, 2).Value = "Do";
@@ -39,7 +40,8 @@ public class ExcelServiceTests
     public void ImportThrowsWhenRateDatesMissing()
     {
         using var workbook = new XLWorkbook();
-        workbook.AddWorksheet("Parametry");
+        var parameterSheet = workbook.AddWorksheet("Parametry");
+        WriteRequiredParameters(parameterSheet);
         var rateSheet = workbook.AddWorksheet("Stopy procentowe");
         rateSheet.Cell(1, 1).Value = "Od";
         rateSheet.Cell(1, 2).Value = "Do";
@@ -54,5 +56,39 @@ public class ExcelServiceTests
         var service = new ExcelService();
 
         Assert.Throws<InvalidOperationException>(() => service.Import(stream));
+    }
+
+    private static void WriteRequiredParameters(IXLWorksheet sheet)
+    {
+        sheet.Cell(1, 1).Value = "Parametr";
+        sheet.Cell(1, 2).Value = "Wartość";
+
+        var row = 2;
+        sheet.Cell(row++, 1).Value = "Kwota netto";
+        sheet.Cell(row - 1, 2).Value = 100000;
+
+        sheet.Cell(row++, 1).Value = "Marża";
+        sheet.Cell(row - 1, 2).Value = 2.5;
+
+        sheet.Cell(row++, 1).Value = "Częstotliwość płatności";
+        sheet.Cell(row - 1, 2).Value = PaymentFrequency.Monthly.ToString();
+
+        sheet.Cell(row++, 1).Value = "Dzień płatności";
+        sheet.Cell(row - 1, 2).Value = PaymentDayOption.LastOfMonth.ToString();
+
+        sheet.Cell(row++, 1).Value = "Data początkowa";
+        sheet.Cell(row - 1, 2).Value = new DateTime(2024, 1, 1);
+
+        sheet.Cell(row++, 1).Value = "Data końcowa";
+        sheet.Cell(row - 1, 2).Value = new DateTime(2025, 1, 1);
+
+        sheet.Cell(row++, 1).Value = "Konwencja dni";
+        sheet.Cell(row - 1, 2).Value = DayCountBasis.Actual365.ToString();
+
+        sheet.Cell(row++, 1).Value = "Zaokrąglanie";
+        sheet.Cell(row - 1, 2).Value = RoundingModeOption.Bankers.ToString();
+
+        sheet.Cell(row++, 1).Value = "Miejsca po przecinku";
+        sheet.Cell(row - 1, 2).Value = 4;
     }
 }

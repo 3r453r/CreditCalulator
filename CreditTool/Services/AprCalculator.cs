@@ -84,6 +84,11 @@ public static class AprCalculator
             disbursement -= parameters.NetValue * parameters.ProcessingFeeRate / 100m;
         }
 
+        if (parameters.ProcessingFeeAmount > 0)
+        {
+            disbursement -= parameters.ProcessingFeeAmount;
+        }
+
         var flows = new List<(DateTime Date, decimal Amount)> { (parameters.CreditStartDate, disbursement) };
         flows.AddRange(schedule.Select(item => (item.PaymentDate, -item.TotalPayment)));
         flows.Sort((a, b) => a.Date.CompareTo(b.Date));

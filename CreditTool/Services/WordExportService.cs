@@ -67,6 +67,7 @@ public class WordExportService
             ("Zaokrąglanie", parameters.RoundingMode.ToString()),
             ("Miejsca po przecinku", parameters.RoundingDecimals.ToString()),
             ("Prowizja przygotowawcza", $"{parameters.ProcessingFeeRate:N2}%"),
+            ("Prowizja przygotowawcza (kwota)", parameters.ProcessingFeeAmount.ToString("N2")),
             ("Typ spłaty", parameters.PaymentType.ToString()),
             ("Spłata balonowa", parameters.BulletRepayment ? "Tak" : "Nie")
         };

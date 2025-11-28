@@ -18,9 +18,6 @@ builder.Services.AddAntiforgery();
 
 var app = builder.Build();
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-app.UseRouting();
 app.Use(async (context, next) =>
 {
     if (HttpMethods.IsGet(context.Request.Method) && (context.Request.Path == "/" || context.Request.Path == "/index.html"))
@@ -37,6 +34,9 @@ app.Use(async (context, next) =>
 
     await next();
 });
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseRouting();
 app.UseAntiforgery();
 
 app.MapPost("/api/import", async (IFormFile file, ExcelService excelService, WordImportService wordImportService) =>

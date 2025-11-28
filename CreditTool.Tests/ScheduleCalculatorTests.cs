@@ -136,4 +136,55 @@ public class ScheduleCalculatorTests
         var secondRounded = RoundingService.Round(secondRaw, parameters.RoundingMode, parameters.RoundingDecimals);
         Assert.Equal(secondRounded, schedule[1].InterestAmount);
     }
+
+    [Fact]
+    public void CalculatesEqualInstallmentsWithoutNegativePrincipal()
+    {
+        var calculator = CreateCalculator();
+        var parameters = new CreditParameters
+        {
+            NetValue = 100_000m,
+            MarginRate = 0m,
+            PaymentFrequency = PaymentFrequency.Monthly,
+            PaymentDay = PaymentDayOption.LastOfMonth,
+            CreditStartDate = new DateTime(2025, 1, 1),
+            CreditEndDate = new DateTime(2026, 1, 1),
+            DayCountBasis = DayCountBasis.Actual365,
+            RoundingMode = RoundingModeOption.Bankers,
+            RoundingDecimals = 4,
+            PaymentType = PaymentType.EqualInstallments
+        };
+
+        var rates = new[]
+        {
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 1),
+                DateTo = new DateTime(2025, 12, 31),
+                Rate = 5m
+            }
+        };
+
+        var schedule = calculator.Calculate(parameters, rates);
+
+        Assert.Equal(12, schedule.Count);
+        Assert.All(schedule, item =>
+        {
+            Assert.True(item.InterestAmount >= 0m, "Interest should not be negative");
+            Assert.True(item.PrincipalPayment >= 0m, "Principal should not be negative");
+            Assert.True(item.RemainingPrincipal >= 0m, "Remaining principal should not be negative");
+        });
+
+        var firstTotal = schedule.First().TotalPayment;
+        Assert.All(schedule.Take(schedule.Count - 1), item =>
+            Assert.InRange(Math.Abs(item.TotalPayment - firstTotal), 0m, 0.05m));
+
+        var remaining = schedule.Select(item => item.RemainingPrincipal).ToList();
+        for (var i = 1; i < remaining.Count; i++)
+        {
+            Assert.True(remaining[i] <= remaining[i - 1] + 0.0001m, "Remaining principal should decrease over time");
+        }
+
+        Assert.Equal(0m, schedule.Last().RemainingPrincipal);
+    }
 }

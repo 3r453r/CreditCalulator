@@ -28,7 +28,7 @@ public class ExcelServiceTests
         stream.Position = 0;
 
         var service = new ExcelService();
-        var (_, rates) = service.Import(stream);
+        var (_, rates) = service.Import(stream, ".xlsx");
 
         Assert.Single(rates);
         var period = rates[0];
@@ -55,7 +55,7 @@ public class ExcelServiceTests
 
         var service = new ExcelService();
 
-        Assert.Throws<InvalidOperationException>(() => service.Import(stream));
+        Assert.Throws<InvalidOperationException>(() => service.Import(stream, ".xlsx"));
     }
 
     private static void WriteRequiredParameters(IXLWorksheet sheet)

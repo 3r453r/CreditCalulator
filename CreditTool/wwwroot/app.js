@@ -125,7 +125,7 @@ importForm.addEventListener('submit', async (event) => {
     importStatus.textContent = '';
     const fileInput = document.getElementById('import-file');
     if (!fileInput.files.length) {
-        importStatus.textContent = 'Wybierz plik Excel lub Word do importu.';
+        importStatus.textContent = 'Wybierz plik Excel (.xlsx), OpenDocument (.ods) lub JSON do importu.';
         importStatus.className = 'status error';
         return;
     }
@@ -192,7 +192,8 @@ document.getElementById('export').addEventListener('click', async () => {
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = format === 'word' ? 'harmonogram.docx' : 'harmonogram.xlsx';
+        const extension = format === 'ods' ? 'ods' : format === 'json' ? 'json' : 'xlsx';
+        link.download = `harmonogram.${extension}`;
         link.click();
         window.URL.revokeObjectURL(url);
         actionStatus.textContent = 'Eksport zakończony powodzeniem.';

@@ -1,6 +1,11 @@
 using ClosedXML.Excel;
 using CreditTool.Models;
 using System.Globalization;
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Xml.Linq;
 
 namespace CreditTool.Services;
 
@@ -40,7 +45,102 @@ public class ExcelService
         ["Typ spłaty"] = "PaymentType"
     };
 
-    public (CreditParameters Parameters, List<InterestRatePeriod> Rates) Import(Stream fileStream)
+    public (CreditParameters Parameters, List<InterestRatePeriod> Rates) Import(Stream fileStream, string extension)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".xlsx" => ImportXlsx(fileStream),
+            ".ods" => ImportOds(fileStream),
+            _ => throw new InvalidOperationException("Nieobsługiwany format pliku. Użyj .xlsx lub .ods")
+        };
+    }
+
+    public async Task<(CreditParameters Parameters, List<InterestRatePeriod> Rates)> ImportJsonAsync(Stream fileStream)
+    {
+        var request = await JsonSerializer.DeserializeAsync<CalculationRequest>(fileStream, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new JsonStringEnumConverter() }
+        });
+
+        if (request?.Parameters is null || request.Rates is null || request.Rates.Count == 0)
+        {
+            throw new InvalidOperationException("Nieprawidłowy plik JSON z parametrami lub stopami procentowymi.");
+        }
+
+        return (request.Parameters, request.Rates);
+    }
+
+    public byte[] ExportJson(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule, decimal totalInterest, decimal annualPercentageRate)
+    {
+        var payload = new
+        {
+            parameters,
+            rates,
+            schedule,
+            totalInterest,
+            annualPercentageRate
+        };
+
+        return JsonSerializer.SerializeToUtf8Bytes(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Converters = { new JsonStringEnumConverter() }
+        });
+    }
+
+    public byte[] ExportXlsx(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule, decimal totalInterest, decimal annualPercentageRate)
+    {
+        using var workbook = new XLWorkbook();
+        var parameterSheet = workbook.AddWorksheet("Parametry");
+        WriteParameters(parameterSheet, parameters);
+
+        var rateSheet = workbook.AddWorksheet("Stopy procentowe");
+        WriteRates(rateSheet, rates);
+
+        var scheduleSheet = workbook.AddWorksheet("Harmonogram");
+        WriteSchedule(scheduleSheet, schedule, totalInterest, annualPercentageRate);
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] ExportOds(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule, decimal totalInterest, decimal annualPercentageRate)
+    {
+        var parameterRows = BuildParameterRows(parameters);
+        var rateRows = BuildRateRows(rates);
+        var scheduleRows = BuildScheduleRows(schedule, totalInterest, annualPercentageRate);
+
+        var contentDocument = BuildOdsContent(parameterRows, rateRows, scheduleRows);
+        var manifest = BuildOdsManifest();
+
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
+        {
+            var mimeEntry = archive.CreateEntry("mimetype", CompressionLevel.NoCompression);
+            using (var writer = new StreamWriter(mimeEntry.Open(), new UTF8Encoding(false)))
+            {
+                writer.Write("application/vnd.oasis.opendocument.spreadsheet");
+            }
+
+            var contentEntry = archive.CreateEntry("content.xml", CompressionLevel.Optimal);
+            using (var writer = new StreamWriter(contentEntry.Open(), new UTF8Encoding(false)))
+            {
+                writer.Write(contentDocument);
+            }
+
+            var manifestEntry = archive.CreateEntry("META-INF/manifest.xml", CompressionLevel.Optimal);
+            using (var writer = new StreamWriter(manifestEntry.Open(), new UTF8Encoding(false)))
+            {
+                writer.Write(manifest);
+            }
+        }
+
+        return stream.ToArray();
+    }
+
+    private static (CreditParameters Parameters, List<InterestRatePeriod> Rates) ImportXlsx(Stream fileStream)
     {
         using var workbook = new XLWorkbook(fileStream);
         var parameters = ReadParameters(workbook.Worksheet(1));
@@ -54,22 +154,50 @@ public class ExcelService
         return (parameters, rates);
     }
 
-    public byte[] Export(CreditParameters parameters, IEnumerable<InterestRatePeriod> rates, IEnumerable<ScheduleItem> schedule, decimal totalInterest)
+    private (CreditParameters Parameters, List<InterestRatePeriod> Rates) ImportOds(Stream fileStream)
     {
-        using var workbook = new XLWorkbook();
-        var parameterSheet = workbook.AddWorksheet("Parametry");
-        WriteParameters(parameterSheet, parameters);
+        using var archive = new ZipArchive(fileStream, ZipArchiveMode.Read, leaveOpen: true);
+        var contentEntry = archive.GetEntry("content.xml") ?? throw new InvalidOperationException("Nie znaleziono danych arkusza w pliku ODS.");
+        using var contentStream = contentEntry.Open();
+        var document = XDocument.Load(contentStream);
 
-        var rateSheet = workbook.AddWorksheet("Stopy procentowe");
-        WriteRates(rateSheet, rates);
+        XNamespace tableNs = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+        var tables = document.Descendants(tableNs + "table").ToList();
+        if (tables.Count < 2)
+        {
+            throw new InvalidOperationException("Nie znaleziono wymaganych tabel w pliku ODS.");
+        }
 
-        var scheduleSheet = workbook.AddWorksheet("Harmonogram");
-        var apr = AprCalculator.CalculateAnnualPercentageRate(parameters, schedule);
-        WriteSchedule(scheduleSheet, schedule, totalInterest, apr);
+        var parameterTable = tables.First();
+        var rateTable = tables.Skip(1).First();
 
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-        return stream.ToArray();
+        var parameterMap = ReadOdsParameterMap(parameterTable);
+        ValidateRequiredParameters(parameterMap);
+
+        var parameters = new CreditParameters
+        {
+            NetValue = ParseDecimal(parameterMap, "NetValue", required: true),
+            MarginRate = ParseDecimal(parameterMap, "MarginRate", required: true),
+            PaymentFrequency = ParseEnum(parameterMap, "PaymentFrequency", PaymentFrequency.Monthly, required: true),
+            PaymentDay = ParseEnum(parameterMap, "PaymentDay", PaymentDayOption.LastOfMonth, required: true),
+            CreditStartDate = ParseDate(parameterMap, "CreditStartDate", required: true),
+            CreditEndDate = ParseDate(parameterMap, "CreditEndDate", required: true),
+            DayCountBasis = ParseEnum(parameterMap, "DayCountBasis", DayCountBasis.Actual365, required: true),
+            RoundingMode = ParseEnum(parameterMap, "RoundingMode", RoundingModeOption.Bankers, required: true),
+            RoundingDecimals = ParseInt(parameterMap, "RoundingDecimals", 4, required: true),
+            ProcessingFeeRate = ParseDecimal(parameterMap, "ProcessingFeeRate"),
+            ProcessingFeeAmount = ParseDecimal(parameterMap, "ProcessingFeeAmount"),
+            BulletRepayment = ParseBool(parameterMap, "BulletRepayment"),
+            PaymentType = ParseEnum(parameterMap, "PaymentType", PaymentType.DecreasingInstallments)
+        };
+
+        var rates = ReadOdsRates(rateTable);
+        if (rates.Count == 0)
+        {
+            throw new InvalidOperationException("Brak stóp procentowych w arkuszu importu.");
+        }
+
+        return (parameters, rates);
     }
 
     private static CreditParameters ReadParameters(IXLWorksheet worksheet)
@@ -314,6 +442,237 @@ public class ExcelService
         worksheet.Columns().AdjustToContents();
     }
 
+    private static List<List<OdsCell>> BuildParameterRows(CreditParameters parameters)
+    {
+        var rows = new List<List<OdsCell>>
+        {
+            new() { new OdsCell("Parametr"), new OdsCell("Wartość") }
+        };
+
+        var values = new (string Label, object? Value)[]
+        {
+            ("Kwota netto", parameters.NetValue),
+            ("Marża", parameters.MarginRate),
+            ("Częstotliwość płatności", parameters.PaymentFrequency),
+            ("Dzień płatności", parameters.PaymentDay),
+            ("Data początkowa", parameters.CreditStartDate),
+            ("Data końcowa", parameters.CreditEndDate),
+            ("Konwencja dni", parameters.DayCountBasis),
+            ("Zaokrąglanie", parameters.RoundingMode),
+            ("Miejsca po przecinku", parameters.RoundingDecimals),
+            ("Prowizja przygotowawcza", parameters.ProcessingFeeRate),
+            ("Prowizja przygotowawcza (kwota)", parameters.ProcessingFeeAmount),
+            ("Typ spłaty", parameters.PaymentType),
+            ("Spłata balonowa", parameters.BulletRepayment)
+        };
+
+        foreach (var (label, value) in values)
+        {
+            rows.Add(new List<OdsCell>
+            {
+                new(label),
+                OdsCell.FromValue(value)
+            });
+        }
+
+        return rows;
+    }
+
+    private static List<List<OdsCell>> BuildRateRows(IEnumerable<InterestRatePeriod> rates)
+    {
+        var rows = new List<List<OdsCell>>
+        {
+            new() { new OdsCell("Od"), new OdsCell("Do"), new OdsCell("Stopa (%)") }
+        };
+
+        foreach (var rate in rates)
+        {
+            rows.Add(new List<OdsCell>
+            {
+                new(rate.DateFrom),
+                new(rate.DateTo),
+                new OdsCell(rate.Rate)
+            });
+        }
+
+        return rows;
+    }
+
+    private static List<List<OdsCell>> BuildScheduleRows(IEnumerable<ScheduleItem> schedule, decimal totalInterest, decimal apr)
+    {
+        var rows = new List<List<OdsCell>>
+        {
+            new()
+            {
+                new OdsCell("Data płatności"),
+                new OdsCell("Dni w okresie"),
+                new OdsCell("Stopa %"),
+                new OdsCell("Odsetki"),
+                new OdsCell("Spłata kapitału"),
+                new OdsCell("Łączna płatność"),
+                new OdsCell("Pozostały kapitał")
+            }
+        };
+
+        foreach (var item in schedule)
+        {
+            rows.Add(new List<OdsCell>
+            {
+                new(item.PaymentDate),
+                new OdsCell(item.DaysInPeriod),
+                new OdsCell(item.InterestRate),
+                new OdsCell(item.InterestAmount),
+                new OdsCell(item.PrincipalPayment),
+                new OdsCell(item.TotalPayment),
+                new OdsCell(item.RemainingPrincipal)
+            });
+        }
+
+        rows.Add(new List<OdsCell> { new("Łączne odsetki"), new(totalInterest) });
+        rows.Add(new List<OdsCell> { new("RRSO (APR)"), new(apr) });
+
+        return rows;
+    }
+
+    private static string BuildOdsContent(List<List<OdsCell>> parameterRows, List<List<OdsCell>> rateRows, List<List<OdsCell>> scheduleRows)
+    {
+        XNamespace office = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
+        XNamespace table = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+        XNamespace text = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+        var document = new XDocument(
+            new XDeclaration("1.0", "UTF-8", "yes"),
+            new XElement(office + "document-content",
+                new XAttribute(XNamespace.Xmlns + "office", office),
+                new XAttribute(XNamespace.Xmlns + "table", table),
+                new XAttribute(XNamespace.Xmlns + "text", text),
+                new XAttribute(office + "version", "1.2"),
+                new XElement(office + "automatic-styles"),
+                new XElement(office + "body",
+                    new XElement(office + "spreadsheet",
+                        BuildOdsTable("Parametry", parameterRows, table, text),
+                        BuildOdsTable("Stopy procentowe", rateRows, table, text),
+                        BuildOdsTable("Harmonogram", scheduleRows, table, text))
+                )));
+
+        return document.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+    }
+
+    private static string BuildOdsManifest()
+    {
+        XNamespace manifest = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+        var manifestDoc = new XDocument(
+            new XDeclaration("1.0", "UTF-8", "yes"),
+            new XElement(manifest + "manifest",
+                new XAttribute(XNamespace.Xmlns + "manifest", manifest),
+                new XElement(manifest + "file-entry",
+                    new XAttribute(manifest + "full-path", "/"),
+                    new XAttribute(manifest + "media-type", "application/vnd.oasis.opendocument.spreadsheet"),
+                    new XAttribute(manifest + "version", "1.2")),
+                new XElement(manifest + "file-entry",
+                    new XAttribute(manifest + "full-path", "content.xml"),
+                    new XAttribute(manifest + "media-type", "text/xml"))));
+
+        return manifestDoc.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+    }
+
+    private static XElement BuildOdsTable(string name, IEnumerable<IEnumerable<OdsCell>> rows, XNamespace table, XNamespace text)
+    {
+        return new XElement(table + "table",
+            new XAttribute(table + "name", name),
+            rows.Select(row => new XElement(table + "table-row",
+                row.Select(cell => cell.ToXElement(table, text)))));
+    }
+
+    private static Dictionary<string, string> ReadOdsParameterMap(XElement table)
+    {
+        XNamespace tableNs = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+        XNamespace text = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var rows = ParseOdsTableRows(table, tableNs, text).Skip(1); // Skip header
+        foreach (var row in rows)
+        {
+            if (row.Count < 2)
+            {
+                continue;
+            }
+
+            var key = row[0];
+            var value = row[1];
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                var normalized = NormalizeParameterKey(key);
+                map[normalized] = value;
+            }
+        }
+
+        return map;
+    }
+
+    private static List<InterestRatePeriod> ReadOdsRates(XElement table)
+    {
+        XNamespace tableNs = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+        XNamespace text = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+        var rates = new List<InterestRatePeriod>();
+        var rows = ParseOdsTableRows(table, tableNs, text).Skip(1); // Skip header
+        var rowIndex = 2;
+        foreach (var row in rows)
+        {
+            if (row.Count < 3)
+            {
+                rowIndex++;
+                continue;
+            }
+
+            if (!TryParseDateString(row[0], out var from) || !TryParseDateString(row[1], out var to))
+            {
+                throw new InvalidOperationException($"Nieprawidłowa data w wierszu {rowIndex} tabeli stóp procentowych.");
+            }
+
+            if (TryParseDecimal(row[2], out var rate))
+            {
+                rates.Add(new InterestRatePeriod
+                {
+                    DateFrom = from,
+                    DateTo = to,
+                    Rate = rate
+                });
+            }
+            else
+            {
+                throw new InvalidOperationException($"Nieprawidłowa stopa procentowa w wierszu {rowIndex} tabeli stóp procentowych.");
+            }
+
+            rowIndex++;
+        }
+
+        return rates;
+    }
+
+    private static List<List<string>> ParseOdsTableRows(XElement tableElement, XNamespace tableNs, XNamespace textNs)
+    {
+        var rows = new List<List<string>>();
+        foreach (var row in tableElement.Elements(tableNs + "table-row"))
+        {
+            var cells = new List<string>();
+            foreach (var cell in row.Elements(tableNs + "table-cell"))
+            {
+                var repeatAttr = (int?)cell.Attribute(tableNs + "number-columns-repeated") ?? 1;
+                var text = string.Join("\n", cell.Elements(textNs + "p").Select(p => (string?)p ?? string.Empty));
+                for (var i = 0; i < repeatAttr; i++)
+                {
+                    cells.Add(text);
+                }
+            }
+
+            rows.Add(cells);
+        }
+
+        return rows;
+    }
+
     private static decimal ParseDecimal(IDictionary<string, string> parameters, string key, bool required = false, decimal defaultValue = 0m)
     {
         if (!parameters.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
@@ -461,5 +820,83 @@ public class ExcelService
         return ParameterKeyAliases.TryGetValue(trimmed, out var canonical)
             ? canonical
             : trimmed;
+    }
+}
+
+internal readonly struct OdsCell
+{
+    public enum OdsCellType
+    {
+        String,
+        Number,
+        Date
+    }
+
+    public object? Value { get; }
+    public OdsCellType Type { get; }
+
+    public OdsCell(string text)
+    {
+        Value = text;
+        Type = OdsCellType.String;
+    }
+
+    public OdsCell(decimal number)
+    {
+        Value = number;
+        Type = OdsCellType.Number;
+    }
+
+    public OdsCell(int number)
+    {
+        Value = number;
+        Type = OdsCellType.Number;
+    }
+
+    public OdsCell(DateTime date)
+    {
+        Value = date;
+        Type = OdsCellType.Date;
+    }
+
+    public XElement ToXElement(XNamespace table, XNamespace text)
+    {
+        var cell = new XElement(table + "table-cell");
+        switch (Type)
+        {
+            case OdsCellType.Number:
+                var numeric = Convert.ToDecimal(Value, CultureInfo.InvariantCulture);
+                cell.SetAttributeValue(XName.Get("value-type", "urn:oasis:names:tc:opendocument:xmlns:office:1.0"), "float");
+                cell.SetAttributeValue(XName.Get("value", "urn:oasis:names:tc:opendocument:xmlns:office:1.0"), numeric.ToString(CultureInfo.InvariantCulture));
+                cell.Add(new XElement(text + "p", numeric.ToString(CultureInfo.InvariantCulture)));
+                break;
+            case OdsCellType.Date:
+                var date = (DateTime)Value!;
+                cell.SetAttributeValue(XName.Get("value-type", "urn:oasis:names:tc:opendocument:xmlns:office:1.0"), "date");
+                cell.SetAttributeValue(XName.Get("date-value", "urn:oasis:names:tc:opendocument:xmlns:office:1.0"), date.ToString("yyyy-MM-dd"));
+                cell.Add(new XElement(text + "p", date.ToString("yyyy-MM-dd")));
+                break;
+            default:
+                cell.SetAttributeValue(XName.Get("value-type", "urn:oasis:names:tc:opendocument:xmlns:office:1.0"), "string");
+                cell.Add(new XElement(text + "p", Value?.ToString() ?? string.Empty));
+                break;
+        }
+
+        return cell;
+    }
+
+    public static OdsCell FromValue(object? value)
+    {
+        return value switch
+        {
+            DateTime date => new OdsCell(date),
+            decimal number => new OdsCell(number),
+            int number => new OdsCell(number),
+            double number => new OdsCell(Convert.ToDecimal(number, CultureInfo.InvariantCulture)),
+            bool flag => new OdsCell(flag ? bool.TrueString : bool.FalseString),
+            Enum enumValue => new OdsCell(enumValue.ToString()),
+            _ when value is null => new OdsCell(string.Empty),
+            _ => new OdsCell(value.ToString() ?? string.Empty)
+        };
     }
 }

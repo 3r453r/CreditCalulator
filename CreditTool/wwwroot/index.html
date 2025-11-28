@@ -10,13 +10,13 @@
     <main class="container">
         <header>
             <h1>Kalkulator harmonogramu kredytu</h1>
-            <p>Wczytaj parametry z pliku Excel lub uzupełnij je ręcznie, aby obliczyć harmonogram płatności.</p>
+            <p>Wczytaj parametry z pliku Excel, OpenDocument lub JSON albo uzupełnij je ręcznie, aby obliczyć harmonogram płatności.</p>
         </header>
 
         <section class="card">
             <h2>Import parametrów</h2>
             <form id="import-form">
-                <input type="file" id="import-file" accept=".xlsx,.xls,.docx" />
+                <input type="file" id="import-file" accept=".xlsx,.ods,.json" />
                 <div class="actions">
                     <button type="submit">Importuj z pliku</button>
                 </div>
@@ -102,7 +102,8 @@
             <label for="export-format">Format eksportu
                 <select id="export-format">
                     <option value="excel">Excel (.xlsx)</option>
-                    <option value="word">Word (.docx)</option>
+                    <option value="ods">OpenDocument (.ods)</option>
+                    <option value="json">JSON (.json)</option>
                 </select>
             </label>
             <button id="export" class="secondary">Eksportuj</button>

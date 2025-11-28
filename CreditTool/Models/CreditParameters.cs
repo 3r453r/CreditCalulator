@@ -38,7 +38,6 @@ public enum PaymentType
 public enum InterestRateApplication
 {
     DailyAccrual,
-    AverageRatePerPeriod,
     ApplyChangedRateNextPeriod
 }
 

@@ -190,4 +190,67 @@ public class ScheduleCalculatorTests
             "For equal installments, principal part should grow over time");
         Assert.Equal(0m, schedule.Last().RemainingPrincipal);
     }
+
+    [Fact]
+    public void DifferentiatesAccrualMethodsWhenRateChangesMidPeriod()
+    {
+        var calculator = CreateCalculator();
+
+        var startDate = new DateTime(2025, 1, 1);
+        var endDate = new DateTime(2025, 4, 1);
+
+        const decimal netValue = 100_000m;
+        const decimal marginRate = 1m;
+
+        CreditParameters CreateParameters(InterestRateApplication application) => new()
+        {
+            NetValue = netValue,
+            MarginRate = marginRate,
+            PaymentFrequency = PaymentFrequency.Monthly,
+            PaymentDay = PaymentDayOption.LastOfMonth,
+            CreditStartDate = startDate,
+            CreditEndDate = endDate,
+            DayCountBasis = DayCountBasis.Actual365,
+            RoundingMode = RoundingModeOption.Bankers,
+            RoundingDecimals = 4,
+            PaymentType = PaymentType.DecreasingInstallments,
+            InterestRateApplication = application
+        };
+
+        var ratePeriods = new[]
+        {
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 1, 1),
+                DateTo = new DateTime(2025, 2, 14),
+                Rate = 10m
+            },
+            new InterestRatePeriod
+            {
+                DateFrom = new DateTime(2025, 2, 15),
+                DateTo = new DateTime(2025, 12, 31),
+                Rate = 3m
+            }
+        };
+
+        var dailySchedule = calculator.Calculate(CreateParameters(InterestRateApplication.DailyAccrual), ratePeriods).Schedule;
+        var nextPeriodSchedule = calculator.Calculate(CreateParameters(InterestRateApplication.ApplyChangedRateNextPeriod), ratePeriods).Schedule;
+
+        Assert.Equal(dailySchedule.Count, nextPeriodSchedule.Count);
+
+        var firstPeriodDays = dailySchedule[0].DaysInPeriod;
+        var daysAtHighRate = (new DateTime(2025, 2, 15) - startDate).Days;
+        var daysAtLowRate = firstPeriodDays - daysAtHighRate;
+
+        var expectedFirstPeriodDailyRaw = netValue * (10m + marginRate) / 100m / 365m * daysAtHighRate
+                                         + netValue * (3m + marginRate) / 100m / 365m * daysAtLowRate;
+        var expectedFirstPeriodDaily = RoundingService.Round(expectedFirstPeriodDailyRaw, RoundingModeOption.Bankers, 4);
+        Assert.Equal(expectedFirstPeriodDaily, dailySchedule[0].InterestAmount);
+
+        var expectedFirstPeriodNextRaw = netValue * (10m + marginRate) / 100m / 365m * firstPeriodDays;
+        var expectedFirstPeriodNext = RoundingService.Round(expectedFirstPeriodNextRaw, RoundingModeOption.Bankers, 4);
+
+        Assert.Equal(expectedFirstPeriodNext, nextPeriodSchedule[0].InterestAmount);
+        Assert.NotEqual(nextPeriodSchedule[0].InterestAmount, dailySchedule[0].InterestAmount);
+    }
 }

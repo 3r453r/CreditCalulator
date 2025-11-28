@@ -1,11 +1,15 @@
 using CreditTool.Models;
 using CreditTool.Services;
+using CreditTool.Services.ScheduleCalculation;
+using CreditTool.Services.ScheduleCalculation.Configuration;
+using CreditTool.Services.ScheduleCalculation.Strategies.PaymentDate;
 using Microsoft.AspNetCore.Antiforgery;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IScheduleCalculator, DayToDayScheduleCalculator>();
+builder.Services.AddSingleton<IPaymentDateGenerator, StandardPaymentDateGenerator>();
+builder.Services.AddSingleton<IScheduleCalculator, ScheduleCalculator>();
 builder.Services.AddSingleton(_ => new CalculatorConfiguration
 {
     LevelPaymentTolerance = 0.0001m,

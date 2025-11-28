@@ -2,6 +2,8 @@ using System.Linq;
 using System.Net.Http.Json;
 using CreditTool.Models;
 using CreditTool.Services;
+using CreditTool.Services.ScheduleCalculation;
+using CreditTool.Services.ScheduleCalculation.Strategies.PaymentDate;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace CreditTool.Tests;
@@ -51,7 +53,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(payload);
         Assert.NotEmpty(payload!.Schedule);
 
-        var calculator = new DayToDayScheduleCalculator();
+        var calculator = new ScheduleCalculator(new StandardPaymentDateGenerator());
         var expectedSchedule = calculator.Calculate(request.Parameters, request.Rates).Schedule;
         var expectedTotalInterest = expectedSchedule
             .Select(item => RoundingService.Round(item.InterestAmount, request.Parameters.RoundingMode, 2))

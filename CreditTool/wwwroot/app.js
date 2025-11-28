@@ -104,6 +104,22 @@ function getLastPaymentPeriodStart(startDate, endDate) {
     return paymentDates[paymentDates.length - 2];
 }
 
+function getFirstPaymentPeriodEnd(startDate, endDate) {
+    const frequency = document.getElementById('payment-frequency').value;
+    const paymentDay = document.getElementById('payment-day').value;
+
+    if (!startDate || !endDate || startDate >= endDate) {
+        return null;
+    }
+
+    const paymentDates = buildPaymentDates(startDate, endDate, frequency, paymentDay);
+    if (!paymentDates.length) {
+        return null;
+    }
+
+    return paymentDates[0];
+}
+
 function enforceInterestApplicationAvailability() {
     const frequency = document.getElementById('payment-frequency').value;
     const isLongPeriod = frequency === 'Monthly' || frequency === 'Quarterly';
@@ -117,7 +133,7 @@ function enforceInterestApplicationAvailability() {
     }
 }
 
-function addRateRow(rate) {
+function addRateRow(rate, prepend = false) {
     const dateFromValue = rate?.dateFrom
         ? rate.dateFrom.split('T')[0]
         : '';
@@ -141,7 +157,11 @@ function addRateRow(rate) {
         alignRateBoundariesToCreditDates();
     });
 
-    rateTableBody.appendChild(row);
+    if (prepend && rateTableBody.firstChild) {
+        rateTableBody.insertBefore(row, rateTableBody.firstChild);
+    } else {
+        rateTableBody.appendChild(row);
+    }
 }
 
 function alignRateBoundariesToCreditDates() {
@@ -162,7 +182,7 @@ function alignRateBoundariesToCreditDates() {
 function handleAddRateRow() {
     const rows = rateTableBody.querySelectorAll('tr');
     const { startDate, endDate } = getCreditDates();
-    const lastPeriodStart = getLastPaymentPeriodStart(startDate, endDate);
+    const firstPeriodEnd = getFirstPaymentPeriodEnd(startDate, endDate);
 
     if (!rows.length) {
         addRateRow({
@@ -172,18 +192,21 @@ function handleAddRateRow() {
         return;
     }
 
-    const lastRow = rows[rows.length - 1];
+    const firstRow = rows[0];
 
-    if (endDate && lastPeriodStart && lastPeriodStart < endDate) {
-        lastRow.querySelector('.date-to').value = formatDateInput(lastPeriodStart);
-
-        const newStart = addDays(lastPeriodStart, 1);
+    if (startDate && firstPeriodEnd && firstPeriodEnd < endDate) {
+        // Add new row at start position
         addRateRow({
-            dateFrom: formatDateInput(newStart),
-            dateTo: formatDateInput(endDate)
-        });
+            dateFrom: formatDateInput(startDate),
+            dateTo: formatDateInput(firstPeriodEnd)
+        }, true);
+
+        // Adjust old first row's start date to day after new row's end
+        const newStart = addDays(firstPeriodEnd, 1);
+        firstRow.querySelector('.date-from').value = formatDateInput(newStart);
     } else {
-        addRateRow();
+        // If there's only one payment period or invalid dates, add with empty values
+        addRateRow({}, true);
     }
 
     alignRateBoundariesToCreditDates();

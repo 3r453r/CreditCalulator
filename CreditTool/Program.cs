@@ -132,8 +132,12 @@ app.MapPost("/api/export-log", (CalculationRequest request, IScheduleCalculator 
 {
     try
     {
-        var result = calculator.Calculate(request.Parameters, request.Rates, includeLog: true);
-        var logPayload = logExportService.Export(result.CalculationLog);
+        // Use provided log if available (ensures consistency with displayed schedule),
+        // otherwise calculate fresh
+        var logToExport = request.CalculationLog
+            ?? calculator.Calculate(request.Parameters, request.Rates, includeLog: true).CalculationLog;
+
+        var logPayload = logExportService.Export(logToExport);
         var logFileName = $"Harmonogram_Log_{DateTime.UtcNow:yyyyMMddHHmmss}.md";
         return Results.File(logPayload, "text/markdown; charset=utf-8", logFileName);
     }

@@ -12,6 +12,9 @@ const creditEndInput = document.getElementById('credit-end');
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
+// Store the last calculation log for export consistency
+let lastCalculationLog = null;
+
 function parseDateInput(value) {
     if (!value) {
         return null;
@@ -776,6 +779,10 @@ document.getElementById('calculate').addEventListener('click', async () => {
             throw new Error(await response.text());
         }
         const result = await response.json();
+
+        // Store calculation log for later export (ensures consistency)
+        lastCalculationLog = result.calculationLog;
+
         displaySchedule(
             result.schedule,
             result.totalInterest,
@@ -859,6 +866,12 @@ exportLogButton.addEventListener('click', async () => {
     actionStatus.className = 'status';
     try {
         const payload = buildValidatedPayload();
+
+        // Include the stored calculation log to ensure it matches the displayed schedule
+        if (lastCalculationLog) {
+            payload.calculationLog = lastCalculationLog;
+        }
+
         const response = await fetch('/api/export-log', {
             method: 'POST',
             headers: buildAntiforgeryHeaders({ 'Content-Type': 'application/json' }),

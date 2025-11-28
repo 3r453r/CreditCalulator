@@ -153,17 +153,50 @@ public class ExcelService
 
         while (!worksheet.Cell(currentRow, 1).IsEmpty())
         {
-            rows.Add(new InterestRatePeriod
+            var fromCell = worksheet.Cell(currentRow, 1);
+            var toCell = worksheet.Cell(currentRow, 2);
+            var rateCell = worksheet.Cell(currentRow, 3);
+
+            if (TryGetDate(fromCell, out var from) &&
+                TryGetDate(toCell, out var to) &&
+                decimal.TryParse(rateCell.GetString(), out var rate))
             {
-                DateFrom = worksheet.Cell(currentRow, 1).GetDateTime(),
-                DateTo = worksheet.Cell(currentRow, 2).GetDateTime(),
-                Rate = worksheet.Cell(currentRow, 3).GetValue<decimal>()
-            });
+                rows.Add(new InterestRatePeriod
+                {
+                    DateFrom = from,
+                    DateTo = to,
+                    Rate = rate
+                });
+            }
 
             currentRow++;
         }
 
         return rows;
+    }
+
+    private static bool TryGetDate(IXLCell cell, out DateTime date)
+    {
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            date = cell.GetDateTime();
+            return true;
+        }
+
+        var text = cell.GetString();
+        if (DateTime.TryParse(text, out date))
+        {
+            return true;
+        }
+
+        if (double.TryParse(text, out var serialDate))
+        {
+            date = DateTime.FromOADate(serialDate);
+            return true;
+        }
+
+        date = default;
+        return false;
     }
 
     private static void WriteRates(IXLWorksheet worksheet, IEnumerable<InterestRatePeriod> rates)

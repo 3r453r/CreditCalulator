@@ -39,7 +39,8 @@ public class CompoundDailyStrategy : IInterestCalculationStrategy
             var baseRate = period?.Rate ?? 0m;
             var effectiveRate = baseRate + marginRate;
             var previousFactor = factor;
-            var chunkFactor = (decimal)Math.Pow(1.0 + (double)(effectiveRate / 100m / denominator), days);
+            var dailyRate = 1m + (effectiveRate / 100m / denominator);
+            var chunkFactor = DecimalMath.Power(dailyRate, days);
 
             factor *= chunkFactor;
             totalRate += baseRate * days;

@@ -309,12 +309,14 @@ function handleStartDateChange(row) {
         return;
     }
 
-    // If there's a previous row and the boundary is not locked, adjust it
+    // If there's a previous row, adjust it to maintain continuity
     if (rowIndex > 0) {
         const prevRow = rows[rowIndex - 1];
+        const newPrevEnd = addDays(newStartDate, -1);
+        prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
+
+        // Only cascade if the boundary is not locked
         if (!isBoundaryLocked(prevRow, 'end')) {
-            const newPrevEnd = addDays(newStartDate, -1);
-            prevRow.querySelector('.date-to').value = formatDateInput(newPrevEnd);
             cascadeBackward(prevRow);
         }
     }
@@ -339,12 +341,14 @@ function handleEndDateChange(row) {
         return;
     }
 
-    // If there's a next row and the boundary is not locked, adjust it
+    // If there's a next row, adjust it to maintain continuity
     if (rowIndex < rows.length - 1) {
         const nextRow = rows[rowIndex + 1];
+        const newNextStart = addDays(newEndDate, 1);
+        nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
+
+        // Only cascade if the boundary is not locked
         if (!isBoundaryLocked(row, 'end')) {
-            const newNextStart = addDays(newEndDate, 1);
-            nextRow.querySelector('.date-from').value = formatDateInput(newNextStart);
             cascadeForward(row);
         }
     }

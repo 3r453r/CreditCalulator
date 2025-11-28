@@ -120,7 +120,8 @@ public class ScheduleCalculator : IScheduleCalculator
 
             if (includeLog)
             {
-                LogDaysInPeriod(calculationLog, paymentDate, previousDate, daysInPeriod);
+                LogPaymentHeader(calculationLog, index + 1, previousDate, paymentDate, principalRemaining);
+                LogDaysInPeriod(calculationLog, index + 1, paymentDate, previousDate, daysInPeriod);
             }
 
             var interestResult = interestStrategy.Calculate(
@@ -140,6 +141,8 @@ public class ScheduleCalculator : IScheduleCalculator
             {
                 LogInterestCalculation(
                     calculationLog,
+                    index + 1,
+                    paymentDate,
                     parameters,
                     interestResult,
                     interestRounded,
@@ -161,6 +164,8 @@ public class ScheduleCalculator : IScheduleCalculator
             {
                 LogPrincipalCalculation(
                     calculationLog,
+                    index + 1,
+                    paymentDate,
                     parameters,
                     principalPaymentRaw,
                     principalRemaining,
@@ -190,7 +195,7 @@ public class ScheduleCalculator : IScheduleCalculator
 
             if (includeLog)
             {
-                LogRemainingBalance(calculationLog, principalRemaining, principalPayment);
+                LogRemainingBalance(calculationLog, index + 1, paymentDate, principalRemaining, principalPayment, interestRounded, principalPayment + interestRounded);
             }
 
             var totalPayment = interestRounded + principalPayment;
@@ -398,31 +403,79 @@ public class ScheduleCalculator : IScheduleCalculator
         {
             log.Add(new CalculationLogEntry
             {
-                ShortDescription = "Aktualizacja stopy procentowej w trakcie kredytu",
-                SymbolicFormula = "stawka_okresowa = stawka_bazowa + marża",
-                SubstitutedFormula = $"stawka_okresowa = {period.Rate:F4}% + {parameters.MarginRate:F4}% (od {period.DateFrom:yyyy-MM-dd})",
-                Result = $"Nowa stopa od {period.DateFrom:yyyy-MM-dd} do {period.DateTo:yyyy-MM-dd}: {(period.Rate + parameters.MarginRate):F4}%"
+                ShortDescription = "Zmiana stopy procentowej",
+                SymbolicFormula = "stopa_efektywna = stawka_bazowa + marża",
+                SubstitutedFormula = $"{period.Rate:F4}% + {parameters.MarginRate:F4}%",
+                Result = $"{(period.Rate + parameters.MarginRate):F4}% (obowiązuje od {period.DateFrom:yyyy-MM-dd} do {period.DateTo:yyyy-MM-dd})",
+                Context = new LogEntryContext
+                {
+                    Type = LogEntryType.RateChange,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["BaseRate"] = $"{period.Rate:F4}%",
+                        ["MarginRate"] = $"{parameters.MarginRate:F4}%",
+                        ["DateFrom"] = period.DateFrom.ToString("yyyy-MM-dd"),
+                        ["DateTo"] = period.DateTo.ToString("yyyy-MM-dd")
+                    }
+                }
             });
         }
     }
 
+    private void LogPaymentHeader(
+        List<CalculationLogEntry> log,
+        int paymentNumber,
+        DateTime periodStart,
+        DateTime periodEnd,
+        decimal principalBefore)
+    {
+        log.Add(new CalculationLogEntry
+        {
+            ShortDescription = $"═══ RATA {paymentNumber} ({periodStart:yyyy-MM-dd} → {periodEnd:yyyy-MM-dd}) ═══",
+            SymbolicFormula = "",
+            SubstitutedFormula = "",
+            Result = $"Saldo początkowe: {principalBefore:F2} PLN",
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = periodEnd,
+                Type = LogEntryType.Header,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["PeriodStart"] = periodStart.ToString("yyyy-MM-dd"),
+                    ["PeriodEnd"] = periodEnd.ToString("yyyy-MM-dd"),
+                    ["PrincipalBefore"] = $"{principalBefore:F2}"
+                }
+            }
+        });
+    }
+
     private void LogDaysInPeriod(
         List<CalculationLogEntry> log,
+        int paymentNumber,
         DateTime paymentDate,
         DateTime previousDate,
         int daysInPeriod)
     {
         log.Add(new CalculationLogEntry
         {
-            ShortDescription = "Wyznaczenie liczby dni okresu",
-            SymbolicFormula = "dni = data_płatności - poprzednia_data",
-            SubstitutedFormula = $"dni = ({paymentDate:yyyy-MM-dd} - {previousDate:yyyy-MM-dd})",
-            Result = $"{daysInPeriod} dni"
+            ShortDescription = "Liczba dni w okresie",
+            SymbolicFormula = "dni = data_końcowa - data_początkowa",
+            SubstitutedFormula = $"{paymentDate:yyyy-MM-dd} - {previousDate:yyyy-MM-dd}",
+            Result = $"{daysInPeriod} dni",
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = paymentDate,
+                Type = LogEntryType.PeriodCalculation
+            }
         });
     }
 
     private void LogInterestCalculation(
         List<CalculationLogEntry> log,
+        int paymentNumber,
+        DateTime paymentDate,
         CreditParameters parameters,
         InterestCalculationResult result,
         decimal interestRounded,
@@ -434,58 +487,76 @@ public class ScheduleCalculator : IScheduleCalculator
         var interestDescription = parameters.InterestRateApplication switch
         {
             InterestRateApplication.ApplyChangedRateNextPeriod =>
-                "Naliczanie odsetek (zmiana stopy od kolejnego okresu)",
+                "Odsetki (stopa z początku okresu)",
             InterestRateApplication.CompoundDaily =>
-                "Naliczanie odsetek (kapitalizacja dzienna)",
+                "Odsetki (kapitalizacja dzienna)",
             InterestRateApplication.CompoundMonthly =>
-                "Naliczanie odsetek (kapitalizacja miesięczna)",
+                "Odsetki (kapitalizacja miesięczna)",
             InterestRateApplication.CompoundQuarterly =>
-                "Naliczanie odsetek (kapitalizacja kwartalna)",
-            _ => "Naliczanie odsetek"
+                "Odsetki (kapitalizacja kwartalna)",
+            _ => "Odsetki (naliczanie dzienne)"
         };
 
         var interestFormula = parameters.InterestRateApplication switch
         {
             InterestRateApplication.ApplyChangedRateNextPeriod =>
-                "odsetki = saldo * (stopa_na_początek + marża) / 100 / baza_dni * dni",
+                "odsetki = saldo × (stopa_początkowa / 100 / baza) × dni",
             InterestRateApplication.CompoundDaily =>
-                "odsetki = saldo * (∏(1 + r_dzienne/100/baza) - 1)",
+                "odsetki = saldo × (∏(1 + r_dzienne/100/baza) - 1)",
             InterestRateApplication.CompoundMonthly =>
-                "odsetki = saldo * ((1 + r_nom/100/12)^(12*t) - 1)",
+                "odsetki = saldo × ((1 + r_nom/100/12)^(12×t) - 1)",
             InterestRateApplication.CompoundQuarterly =>
-                "odsetki = saldo * ((1 + r_nom/100/4)^(4*t) - 1)",
-            _ => "odsetki = Σ(saldo * (stawka_dzienna + marża) / 100 / baza_dni)"
+                "odsetki = saldo × ((1 + r_nom/100/4)^(4×t) - 1)",
+            _ => "odsetki = saldo × średnia_stopa_dzienna × dni"
         };
 
         string interestSubstitution;
+        string calculationDetails;
         if (result.NominalRate.HasValue && result.EffectivePeriodRate.HasValue)
         {
-            interestSubstitution = $"odsetki = {principal:F2} * {result.EffectivePeriodRate.Value:F6} (stopa nom.: {result.NominalRate.Value:F4}%, okres: {days} dni)";
+            interestSubstitution = $"{principal:F2} × {result.EffectivePeriodRate.Value:F6}";
+            calculationDetails = $"(stopa nom.: {result.NominalRate.Value:F4}%, dni: {days}, baza: {denominator})";
         }
         else
         {
-            interestSubstitution = $"odsetki = {principal:F2} * średnia_stawka_dzienna (baza: {denominator}, dni: {days})";
+            interestSubstitution = $"{principal:F2} × średnia_dzienna";
+            calculationDetails = $"(stopa śr.: {result.EffectiveRate:F4}%, dni: {days}, baza: {denominator})";
         }
+
+        var rawInterest = result.Interest;
+        var roundingNeeded = Math.Abs(rawInterest - interestRounded) > 0.000001m;
+        var resultText = roundingNeeded
+            ? $"{interestRounded:F2} PLN (przed zaokr.: {rawInterest:F6})"
+            : $"{interestRounded:F2} PLN";
 
         log.Add(new CalculationLogEntry
         {
             ShortDescription = interestDescription,
             SymbolicFormula = interestFormula,
-            SubstitutedFormula = interestSubstitution,
-            Result = $"{interestRounded:F4} PLN"
-        });
-
-        log.Add(new CalculationLogEntry
-        {
-            ShortDescription = "Zaokrąglenie odsetek",
-            SymbolicFormula = "odsetki_zaokr = Round(wartość, tryb, miejsca)",
-            SubstitutedFormula = $"Round({result.Interest:F6}, tryb: {parameters.RoundingMode}, miejsca: {parameters.RoundingDecimals})",
-            Result = $"{interestRounded:F4} PLN"
+            SubstitutedFormula = $"{interestSubstitution} {calculationDetails}",
+            Result = resultText,
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = paymentDate,
+                Type = LogEntryType.InterestCalculation,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["Principal"] = $"{principal:F2}",
+                    ["EffectiveRate"] = $"{result.EffectiveRate:F4}%",
+                    ["Days"] = days.ToString(),
+                    ["DayCountBasis"] = denominator.ToString(),
+                    ["RawInterest"] = $"{rawInterest:F6}",
+                    ["RoundedInterest"] = $"{interestRounded:F2}"
+                }
+            }
         });
     }
 
     private void LogPrincipalCalculation(
         List<CalculationLogEntry> log,
+        int paymentNumber,
+        DateTime paymentDate,
         CreditParameters parameters,
         decimal principalPayment,
         decimal principalRemaining,
@@ -493,54 +564,91 @@ public class ScheduleCalculator : IScheduleCalculator
         decimal interestRounded,
         bool isLast)
     {
-        log.Add(new CalculationLogEntry
+        var principalRounded = RoundingService.Round(principalPayment, parameters.RoundingMode, parameters.RoundingDecimals);
+        var roundingNeeded = Math.Abs(principalPayment - principalRounded) > 0.000001m;
+
+        var description = parameters.PaymentType switch
         {
-            ShortDescription = parameters.PaymentType switch
-            {
-                PaymentType.Bullet => "Ustalenie spłaty kapitału (bullet)",
-                PaymentType.DecreasingInstallments => "Ustalenie spłaty kapitału (raty malejące)",
-                _ => "Ustalenie spłaty kapitału (rata równa)"
-            },
-            SymbolicFormula = parameters.PaymentType switch
-            {
-                PaymentType.Bullet when !isLast => "kapitał = 0",
-                PaymentType.Bullet => "kapitał = saldo końcowe",
-                PaymentType.DecreasingInstallments => isLast
-                    ? "kapitał = saldo końcowe"
-                    : "kapitał = saldo_początkowe / liczba_rat",
-                _ => "kapitał = rata_całkowita - odsetki"
-            },
-            SubstitutedFormula = parameters.PaymentType switch
-            {
-                PaymentType.Bullet when !isLast => "kapitał = 0",
-                PaymentType.Bullet => $"kapitał = {principalRemaining:F2}",
-                PaymentType.DecreasingInstallments when isLast => $"kapitał = {principalRemaining:F4}",
-                PaymentType.DecreasingInstallments => $"kapitał = {parameters.NetValue:F4} / liczba_rat",
-                _ => $"kapitał = {fixedTotal!.Value:F4} - {interestRounded:F4}"
-            },
-            Result = $"{principalPayment:F4} PLN"
-        });
+            PaymentType.Bullet => isLast ? "Spłata kapitału (bullet - ostatnia)" : "Spłata kapitału (bullet)",
+            PaymentType.DecreasingInstallments => isLast ? "Spłata kapitału (finalna)" : "Spłata kapitału (rata malejąca)",
+            _ => "Spłata kapitału (rata równa)"
+        };
+
+        var formula = parameters.PaymentType switch
+        {
+            PaymentType.Bullet when !isLast => "kapitał = 0",
+            PaymentType.Bullet => "kapitał = saldo",
+            PaymentType.DecreasingInstallments => isLast ? "kapitał = saldo" : "kapitał = saldo_początkowe / liczba_rat",
+            _ => "kapitał = rata_docelowa - odsetki"
+        };
+
+        var substitution = parameters.PaymentType switch
+        {
+            PaymentType.Bullet when !isLast => "0",
+            PaymentType.Bullet => $"{principalRemaining:F2}",
+            PaymentType.DecreasingInstallments when isLast => $"{principalRemaining:F2}",
+            PaymentType.DecreasingInstallments => $"{parameters.NetValue:F2} / liczba_rat",
+            _ => $"{fixedTotal!.Value:F2} - {interestRounded:F2}"
+        };
+
+        var resultText = roundingNeeded
+            ? $"{principalRounded:F2} PLN (przed zaokr.: {principalPayment:F6})"
+            : $"{principalRounded:F2} PLN";
 
         log.Add(new CalculationLogEntry
         {
-            ShortDescription = "Zaokrąglenie części kapitałowej",
-            SymbolicFormula = "kapitał_zaokr = Round(wartość, tryb, miejsca)",
-            SubstitutedFormula = $"Round({principalPayment:F6}, tryb: {parameters.RoundingMode}, miejsca: {parameters.RoundingDecimals})",
-            Result = $"{principalPayment:F4} PLN"
+            ShortDescription = description,
+            SymbolicFormula = formula,
+            SubstitutedFormula = substitution,
+            Result = resultText,
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = paymentDate,
+                Type = LogEntryType.PrincipalCalculation,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["PrincipalRemaining"] = $"{principalRemaining:F2}",
+                    ["Interest"] = $"{interestRounded:F2}",
+                    ["RawPrincipal"] = $"{principalPayment:F6}",
+                    ["RoundedPrincipal"] = $"{principalRounded:F2}",
+                    ["FixedTotal"] = fixedTotal.HasValue ? $"{fixedTotal.Value:F2}" : "N/A"
+                }
+            }
         });
     }
 
     private void LogRemainingBalance(
         List<CalculationLogEntry> log,
+        int paymentNumber,
+        DateTime paymentDate,
         decimal principalRemaining,
-        decimal principalPayment)
+        decimal principalPayment,
+        decimal interestPayment,
+        decimal totalPayment)
     {
+        var principalBefore = principalRemaining + principalPayment;
+
         log.Add(new CalculationLogEntry
         {
-            ShortDescription = "Aktualizacja salda pozostałego",
-            SymbolicFormula = "saldo_nowe = saldo_poprz - kapitał_zaokr",
-            SubstitutedFormula = $"saldo_nowe = {principalRemaining + principalPayment:F4} - {principalPayment:F4}",
-            Result = $"{principalRemaining:F4} PLN"
+            ShortDescription = "Podsumowanie raty",
+            SymbolicFormula = "saldo_nowe = saldo_przed - kapitał",
+            SubstitutedFormula = $"{principalBefore:F2} - {principalPayment:F2}",
+            Result = $"Saldo: {principalRemaining:F2} PLN | Rata: {totalPayment:F2} PLN (odsetki: {interestPayment:F2}, kapitał: {principalPayment:F2})",
+            Context = new LogEntryContext
+            {
+                PaymentNumber = paymentNumber,
+                PaymentDate = paymentDate,
+                Type = LogEntryType.Summary,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["PrincipalBefore"] = $"{principalBefore:F2}",
+                    ["PrincipalAfter"] = $"{principalRemaining:F2}",
+                    ["PrincipalPayment"] = $"{principalPayment:F2}",
+                    ["InterestPayment"] = $"{interestPayment:F2}",
+                    ["TotalPayment"] = $"{totalPayment:F2}"
+                }
+            }
         });
     }
 

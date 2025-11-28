@@ -8,6 +8,7 @@ namespace CreditTool.Models;
 [JsonSerializable(typeof(ScheduleResponse))]
 [JsonSerializable(typeof(ScheduleItem))]
 [JsonSerializable(typeof(CalculationLogEntry))]
+[JsonSerializable(typeof(LogEntryContext))]
 [JsonSerializable(typeof(ScheduleCalculationResult))]
 [JsonSerializable(typeof(PaymentFrequency))]
 [JsonSerializable(typeof(PaymentDayOption))]
@@ -15,4 +16,5 @@ namespace CreditTool.Models;
 [JsonSerializable(typeof(RoundingModeOption))]
 [JsonSerializable(typeof(PaymentType))]
 [JsonSerializable(typeof(InterestRateApplication))]
+[JsonSerializable(typeof(LogEntryType))]
 public partial class CreditJsonContext : JsonSerializerContext;

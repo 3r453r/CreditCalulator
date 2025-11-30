@@ -113,6 +113,11 @@ th {
     background-color: #fff3cd;
 }
 
+.grace-period-row {
+    background-color: #e0f2fe;
+    font-style: italic;
+}
+
 .warnings {
     background-color: #fff3cd;
     border-left: 4px solid #ffc107;

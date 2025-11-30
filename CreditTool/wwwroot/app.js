@@ -658,6 +658,11 @@ function displaySchedule(schedule, totalInterest, annualPercentageRate, warnings
     (schedule ?? []).forEach((item, index) => {
         const row = document.createElement('tr');
 
+        // Add grace period class if in grace period
+        if (item.isInGracePeriod) {
+            row.classList.add('grace-period-row');
+        }
+
         // Add warning class if needed
         if (item.warnings && item.warnings !== 0) {
             row.classList.add('warning-row');
@@ -668,8 +673,14 @@ function displaySchedule(schedule, totalInterest, annualPercentageRate, warnings
             paymentDisplay += ' *';
         }
 
+        // Add grace period indicator to payment date
+        let paymentDateDisplay = item.paymentDate?.substring(0, 10);
+        if (item.isInGracePeriod) {
+            paymentDateDisplay += ' (karencja)';
+        }
+
         row.innerHTML = `
-            <td>${item.paymentDate?.substring(0, 10)}</td>
+            <td>${paymentDateDisplay}</td>
             <td>${item.daysInPeriod}</td>
             <td>${item.interestRate.toFixed(4)}%${item.nominalRate ? ` (nom: ${item.nominalRate.toFixed(4)}%)` : ''}</td>
             <td>${item.interestAmount.toFixed(2)}</td>

@@ -551,7 +551,8 @@ function readParametersFromForm() {
         roundingDecimals: parseInt(document.getElementById('rounding-decimals').value || '4', 10),
         processingFeeRate: parseFloat(document.getElementById('processing-fee').value) || 0,
         processingFeeAmount: parseFloat(document.getElementById('processing-fee-amount').value) || 0,
-        paymentType: document.getElementById('payment-type').value
+        paymentType: document.getElementById('payment-type').value,
+        gracePeriodMonths: parseInt(document.getElementById('grace-period').value || '0', 10)
     };
 }
 
@@ -569,6 +570,7 @@ function setParametersToForm(parameters) {
     document.getElementById('processing-fee').value = parameters.processingFeeRate ?? 0;
     document.getElementById('processing-fee-amount').value = parameters.processingFeeAmount ?? 0;
     document.getElementById('payment-type').value = parameters.paymentType ?? 'DecreasingInstallments';
+    document.getElementById('grace-period').value = parameters.gracePeriodMonths ?? 0;
 
     enforceInterestApplicationAvailability();
 }

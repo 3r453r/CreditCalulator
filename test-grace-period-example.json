@@ -1,0 +1,36 @@
+{
+  "parameters": {
+    "NetValue": 100000,
+    "MarginRate": 1,
+    "PaymentFrequency": "Monthly",
+    "PaymentDay": "LastOfMonth",
+    "CreditStartDate": "2025-09-01",
+    "CreditEndDate": "2026-08-31",
+    "DayCountBasis": "Actual365",
+    "RoundingMode": "Bankers",
+    "RoundingDecimals": 6,
+    "ProcessingFeeRate": 0,
+    "ProcessingFeeAmount": 100,
+    "PaymentType": "DecreasingInstallments",
+    "BulletRepayment": false,
+    "GracePeriodMonths": 4,
+    "InterestRateApplication": "DailyAccrual"
+  },
+  "rates": [
+    {
+      "DateFrom": "2025-09-01",
+      "DateTo": "2025-09-09",
+      "Rate": 3
+    },
+    {
+      "DateFrom": "2025-09-10",
+      "DateTo": "2025-11-29",
+      "Rate": 4
+    },
+    {
+      "DateFrom": "2025-11-30",
+      "DateTo": "2026-08-31",
+      "Rate": 5
+    }
+  ]
+}

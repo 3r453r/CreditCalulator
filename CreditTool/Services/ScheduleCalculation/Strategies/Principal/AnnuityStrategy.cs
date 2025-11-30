@@ -13,6 +13,12 @@ public class AnnuityStrategy : IPrincipalPaymentStrategy
             throw new InvalidOperationException("Target total payment must be provided for annuity strategy.");
         }
 
+        // Grace period: no principal payment
+        if (context.IsInGracePeriod)
+        {
+            return 0;
+        }
+
         // Last payment: pay remaining balance exactly to close the loan
         if (context.IsLastPayment)
         {

@@ -22,4 +22,5 @@ public record PrincipalPaymentContext(
     int CurrentPaymentIndex,
     int TotalPayments,
     bool IsLastPayment,
-    decimal? TargetTotalPayment = null);
+    decimal? TargetTotalPayment = null,
+    bool IsInGracePeriod = false);

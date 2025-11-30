@@ -95,18 +95,11 @@ public class ScheduleCalculator : IScheduleCalculator
 
         if (parameters.GracePeriodMonths > 0)
         {
-            // Calculate grace period end date
-            var gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
-
-            // Generate payment dates to count how many are in grace period
-            var paymentDates = _paymentDateGenerator.GeneratePaymentDates(
-                parameters.CreditStartDate,
-                parameters.CreditEndDate,
-                parameters.PaymentFrequency,
-                parameters.PaymentDay);
-
-            // Count payments that are NOT in grace period
-            var paymentsAfterGrace = paymentDates.Count(date => date > gracePeriodEndDate);
+            // Grace period should cover the first N payments, not N calendar months
+            // This ensures that setting a grace period of 4 months means the first 4 payments
+            // are interest-only, regardless of the credit start date
+            var paymentsInGracePeriod = Math.Min(parameters.GracePeriodMonths, paymentCount);
+            var paymentsAfterGrace = paymentCount - paymentsInGracePeriod;
             effectivePaymentCount = Math.Max(1, paymentsAfterGrace); // At least 1 to avoid division by zero
         }
 
@@ -134,11 +127,12 @@ public class ScheduleCalculator : IScheduleCalculator
         var principalRemaining = parameters.NetValue;
         var previousDate = parameters.CreditStartDate;
 
-        // Calculate grace period end date
-        DateTime? gracePeriodEndDate = null;
+        // Determine the number of payments in grace period
+        // Grace period should be based on number of payments, not calendar months
+        var paymentsInGracePeriod = 0;
         if (parameters.GracePeriodMonths > 0)
         {
-            gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
+            paymentsInGracePeriod = Math.Min(parameters.GracePeriodMonths, paymentDates.Count);
         }
 
         if (includeLog)
@@ -184,8 +178,8 @@ public class ScheduleCalculator : IScheduleCalculator
                     daysInPeriod);
             }
 
-            // Check if current payment is within grace period
-            var isInGracePeriod = gracePeriodEndDate.HasValue && paymentDate <= gracePeriodEndDate.Value;
+            // Check if current payment is within grace period (based on payment index)
+            var isInGracePeriod = index < paymentsInGracePeriod;
 
             var principalContext = new PrincipalPaymentContext(
                 principalRemaining,
@@ -349,15 +343,17 @@ public class ScheduleCalculator : IScheduleCalculator
         var principalRemaining = parameters.NetValue;
         var previousDate = parameters.CreditStartDate;
 
-        // Calculate grace period end date
-        DateTime? gracePeriodEndDate = null;
+        // Determine the number of payments in grace period
+        var paymentsInGracePeriod = 0;
         if (parameters.GracePeriodMonths > 0)
         {
-            gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
+            paymentsInGracePeriod = Math.Min(parameters.GracePeriodMonths, paymentDates.Count);
         }
 
-        foreach (var paymentDate in paymentDates)
+        for (var index = 0; index < paymentDates.Count; index++)
         {
+            var paymentDate = paymentDates[index];
+
             var result = interestStrategy.Calculate(
                 previousDate,
                 paymentDate,
@@ -371,8 +367,8 @@ public class ScheduleCalculator : IScheduleCalculator
                 parameters.RoundingMode,
                 parameters.RoundingDecimals);
 
-            // During grace period, no principal payment
-            var isInGracePeriod = gracePeriodEndDate.HasValue && paymentDate <= gracePeriodEndDate.Value;
+            // During grace period, no principal payment (based on payment index)
+            var isInGracePeriod = index < paymentsInGracePeriod;
 
             var principalPayment = isInGracePeriod ? 0m : totalPayment - interestRounded;
             if (principalPayment < 0m)

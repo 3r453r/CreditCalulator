@@ -98,6 +98,13 @@ public class CreditParameters
     }
 
     /// <summary>
+    /// Optional grace period in months during which no principal is repaid.
+    /// Only interest is paid during the grace period.
+    /// Set to 0 for no grace period (default).
+    /// </summary>
+    public int GracePeriodMonths { get; set; } = 0;
+
+    /// <summary>
     /// Defines how changing base rates are applied to interest accrual.
     /// </summary>
     public InterestRateApplication InterestRateApplication { get; set; } = InterestRateApplication.DailyAccrual;

@@ -22,6 +22,12 @@ public class DecreasingInstallmentStrategy : IPrincipalPaymentStrategy
 
     public decimal CalculatePrincipalPayment(PrincipalPaymentContext context)
     {
+        // Grace period: no principal payment
+        if (context.IsInGracePeriod)
+        {
+            return 0;
+        }
+
         // Last payment: pay remaining balance to close the loan
         if (context.IsLastPayment)
         {

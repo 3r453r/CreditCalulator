@@ -82,15 +82,40 @@ public class ScheduleCalculator : IScheduleCalculator
         return parameters.PaymentType switch
         {
             PaymentType.Bullet => new BulletPaymentStrategy(),
-            PaymentType.DecreasingInstallments => new DecreasingInstallmentStrategy(
-                parameters.NetValue,
-                RoundingService.Round(
-                    parameters.NetValue / paymentCount,
-                    parameters.RoundingMode,
-                    parameters.RoundingDecimals)),
+            PaymentType.DecreasingInstallments => CreateDecreasingInstallmentStrategy(parameters, paymentCount),
             PaymentType.EqualInstallments => new AnnuityStrategy(),
             _ => throw new ArgumentException($"Unsupported payment type: {parameters.PaymentType}")
         };
+    }
+
+    private DecreasingInstallmentStrategy CreateDecreasingInstallmentStrategy(CreditParameters parameters, int paymentCount)
+    {
+        // Calculate number of payments after grace period
+        var effectivePaymentCount = paymentCount;
+
+        if (parameters.GracePeriodMonths > 0)
+        {
+            // Calculate grace period end date
+            var gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
+
+            // Generate payment dates to count how many are in grace period
+            var paymentDates = _paymentDateGenerator.GeneratePaymentDates(
+                parameters.CreditStartDate,
+                parameters.CreditEndDate,
+                parameters.PaymentFrequency,
+                parameters.PaymentDay);
+
+            // Count payments that are NOT in grace period
+            var paymentsAfterGrace = paymentDates.Count(date => date > gracePeriodEndDate);
+            effectivePaymentCount = Math.Max(1, paymentsAfterGrace); // At least 1 to avoid division by zero
+        }
+
+        return new DecreasingInstallmentStrategy(
+            parameters.NetValue,
+            RoundingService.Round(
+                parameters.NetValue / effectivePaymentCount,
+                parameters.RoundingMode,
+                parameters.RoundingDecimals));
     }
 
     private ScheduleCalculationResult GenerateSchedule(
@@ -108,6 +133,13 @@ public class ScheduleCalculator : IScheduleCalculator
         var warnings = new List<string>();
         var principalRemaining = parameters.NetValue;
         var previousDate = parameters.CreditStartDate;
+
+        // Calculate grace period end date
+        DateTime? gracePeriodEndDate = null;
+        if (parameters.GracePeriodMonths > 0)
+        {
+            gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
+        }
 
         if (includeLog)
         {
@@ -152,13 +184,17 @@ public class ScheduleCalculator : IScheduleCalculator
                     daysInPeriod);
             }
 
+            // Check if current payment is within grace period
+            var isInGracePeriod = gracePeriodEndDate.HasValue && paymentDate <= gracePeriodEndDate.Value;
+
             var principalContext = new PrincipalPaymentContext(
                 principalRemaining,
                 interestRounded,
                 index,
                 paymentDates.Count,
                 isLastPayment,
-                fixedTotalPayment);
+                fixedTotalPayment,
+                isInGracePeriod);
 
             var principalPaymentRaw = principalStrategy.CalculatePrincipalPayment(principalContext);
 
@@ -313,6 +349,13 @@ public class ScheduleCalculator : IScheduleCalculator
         var principalRemaining = parameters.NetValue;
         var previousDate = parameters.CreditStartDate;
 
+        // Calculate grace period end date
+        DateTime? gracePeriodEndDate = null;
+        if (parameters.GracePeriodMonths > 0)
+        {
+            gracePeriodEndDate = parameters.CreditStartDate.AddMonths(parameters.GracePeriodMonths);
+        }
+
         foreach (var paymentDate in paymentDates)
         {
             var result = interestStrategy.Calculate(
@@ -328,7 +371,10 @@ public class ScheduleCalculator : IScheduleCalculator
                 parameters.RoundingMode,
                 parameters.RoundingDecimals);
 
-            var principalPayment = totalPayment - interestRounded;
+            // During grace period, no principal payment
+            var isInGracePeriod = gracePeriodEndDate.HasValue && paymentDate <= gracePeriodEndDate.Value;
+
+            var principalPayment = isInGracePeriod ? 0m : totalPayment - interestRounded;
             if (principalPayment < 0m)
             {
                 principalPayment = 0m;

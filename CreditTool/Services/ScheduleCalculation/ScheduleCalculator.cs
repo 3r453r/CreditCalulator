@@ -254,6 +254,7 @@ public class ScheduleCalculator : IScheduleCalculator
                 TotalPayment = totalPayment,
                 RemainingPrincipal = Math.Max(principalRemaining, 0m),
                 IsFinalPaymentAdjusted = isFinalAdjusted,
+                IsInGracePeriod = isInGracePeriod,
                 Warnings = itemWarnings
             });
 

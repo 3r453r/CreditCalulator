@@ -118,6 +118,21 @@ Click "Oblicz harmonogram" and verify:
 - Payments 5-12 should have `PrincipalPayment: 12500` (principal + interest)
 - `RemainingPrincipal` should stay at 100,000 for first 4 payments
 
+## Visual Indicators in Schedule
+
+Grace period rows are now visually marked in the schedule table:
+- **Light blue background**: Grace period rows have a light blue background color
+- **Italic text**: Text in grace period rows is displayed in italic style
+- **"(karencja)" label**: The payment date shows "(karencja)" after the date
+- **Principal = 0**: Principal payment column shows 0.00 for these rows
+
+Example:
+```
+Data płatności         | Dni | Stopa | Odsetki | Kapitał | Suma    | Pozostały
+2025-10-31 (karencja)  | 30  | 5.00% | 410.96  | 0.00    | 410.96  | 100000.00
+2025-11-30 (karencja)  | 30  | 5.00% | 410.96  | 0.00    | 410.96  | 100000.00
+```
+
 ## Verification Checklist
 
 After fixing, verify your request contains:
@@ -126,6 +141,8 @@ After fixing, verify your request contains:
 - ✅ Last rate period ends on or after credit end date
 - ✅ First 4 schedule items have `"PrincipalPayment": 0`
 - ✅ Remaining schedule items have principal payments
+- ✅ Grace period rows are highlighted with light blue background
+- ✅ Grace period rows show "(karencja)" label in payment date column
 
 ## Test File
 

@@ -31,6 +31,11 @@ public class ScheduleItem
     public bool IsFinalPaymentAdjusted { get; set; }
 
     /// <summary>
+    /// Indicates if this payment is within the grace period (interest-only)
+    /// </summary>
+    public bool IsInGracePeriod { get; set; }
+
+    /// <summary>
     /// Warning flags for this period
     /// </summary>
     public ScheduleWarnings Warnings { get; set; } = ScheduleWarnings.None;

@@ -179,7 +179,12 @@ static IReadOnlyList<ScheduleItem> RoundCashSchedule(IEnumerable<ScheduleItem> s
             InterestAmount = interest,
             PrincipalPayment = principal,
             TotalPayment = total,
-            RemainingPrincipal = remaining
+            RemainingPrincipal = remaining,
+            IsInGracePeriod = item.IsInGracePeriod,
+            IsFinalPaymentAdjusted = item.IsFinalPaymentAdjusted,
+            NominalRate = item.NominalRate,
+            EffectivePeriodRate = item.EffectivePeriodRate,
+            Warnings = item.Warnings
         };
     }).ToList();
 }
